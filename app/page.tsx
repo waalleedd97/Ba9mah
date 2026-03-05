@@ -565,7 +565,7 @@ export default function Home() {
   const navbar = showNavbar ? (
     <nav className={`navbar ${scrolled ? 'scrolled' : ''}`}>
       <div className="navbar-inner">
-        <div className="navbar-brand" onClick={() => { setMode('generate'); }}>بصمة 🌊</div>
+        <div className="navbar-brand" onClick={() => { setMode('generate'); }}><span style={{ fontSize: 28 }}>🫆</span> بصمة</div>
         <div className="navbar-tabs">
           <button className={`nav-tab ${mode === 'generate' ? 'active' : ''}`} onClick={() => setMode('generate')}>
             التوليد
@@ -1072,7 +1072,7 @@ export default function Home() {
         {navbar}
         <div className="center-screen">
           <div className="container fade-in" style={{ textAlign: 'center' }}>
-            <div className="icon-3d icon-3d-lg accent" style={{ margin: '0 auto 28px' }}>👋</div>
+            <div style={{ fontSize: 80, margin: '0 auto 28px', lineHeight: 1 }}>👋</div>
             <h1 style={{ fontSize: 30, fontWeight: 900, marginBottom: 8, color: 'var(--text-primary)' }}>
               أهلاً! بصمة يتذكرك
             </h1>
