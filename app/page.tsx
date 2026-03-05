@@ -163,28 +163,32 @@ export default function Home() {
 - Light clean background, airy and modern`,
     },
     {
-      key: 'photo-overlay',
-      label: 'Photo Overlay - 3',
-      prompt: `Style: Photo Overlay
-- A high-quality realistic photograph as the background, relevant to the post topic (e.g. business meeting, city skyline, hands on laptop, coffee & notebook)
-- Dark semi-transparent overlay on top of the photo (opacity ~0.55)
-- Large bold white Arabic text centered on the overlay — one short key phrase from the post as the headline
-- Subtle white or accent-colored thin border frame
-- Clean, luxurious, editorial magazine feel
-- NO charts, NO icons, NO cluttered elements — photo + overlay + text only`,
+      key: 'clean-infographic',
+      label: 'Infographic - 3',
+      prompt: `Style: Clean Infographic
+- Pure white background
+- Organized sections with colored blocks/cards
+- Icons + short text labels for each point
+- Clear visual hierarchy: big headline at top, content in 2-3 columns below
+- Use accent colors sparingly: one primary color + one secondary color max
+- Numbered steps or grouped info boxes
+- Thin dividers and subtle shadows on cards
+- Professional, clean, LinkedIn-optimized
+- NO photos, NO gradients, NO clutter`,
     },
     {
-      key: 'newspaper-editorial',
-      label: 'Newspaper Editorial - 4',
-      prompt: `Style: Newspaper Editorial
-- Black and white color scheme with ONE accent color only: #FF385C red
-- Typography-driven layout inspired by premium newspapers (NYT, Le Monde style but in Arabic)
-- Bold Arabic headline at the top, large and dominant
-- Thin horizontal rule dividers
-- Small decorative elements: quote marks, small geometric shapes
-- Accent color used ONLY for 1-2 key words or a single underline
-- White background, black text, minimal and sophisticated
-- NO illustrations, NO photos — pure typography and layout`,
+      key: 'concept-mind-map',
+      label: 'Mind Map - 4',
+      prompt: `Style: Concept Mind Map
+- White or very light grey background
+- Central topic in a bold circle/box in the middle
+- Branches radiating outward to subtopics
+- Each branch has a different accent color
+- Clean connecting lines (curved or straight)
+- Short text labels on each node
+- Leaf nodes for supporting details
+- Minimal and elegant — not technical/complex looking
+- Feels like a premium visual summary of the post`,
     },
   ];
 
