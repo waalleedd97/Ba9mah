@@ -40,6 +40,15 @@ export default function Home() {
   // Post edit instruction
   const [postEditInstruction, setPostEditInstruction] = useState('');
   const [postEditLoading, setPostEditLoading] = useState(false);
+  // Like confirmation — delay transition on positive feedback
+  const [likedCurrent, setLikedCurrent] = useState(false);
+  // Saved post editing states
+  const [savedEditingId, setSavedEditingId] = useState<string | null>(null);
+  const [savedEditText, setSavedEditText] = useState('');
+  const [savedAiEditId, setSavedAiEditId] = useState<string | null>(null);
+  const [savedAiInstruction, setSavedAiInstruction] = useState('');
+  const [savedAiLoading, setSavedAiLoading] = useState(false);
+  const [savedImgLoading, setSavedImgLoading] = useState<Record<string, boolean>>({});
   // Theme
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   // Navbar scroll
@@ -217,13 +226,22 @@ export default function Home() {
     if (liked) {
       updated.likedPosts = [...updated.likedPosts, { id: post.id, content: post.content, topic: post.topic }];
       updated.totalLiked += 1;
+      setMem(updated);
+      saveMemory(updated);
+      setLikedCurrent(true);
     } else {
       updated.dislikedPosts = [...updated.dislikedPosts, { id: post.id, content: post.content, topic: post.topic }];
       updated.totalDisliked += 1;
       analyzeDislike(post.content, updated);
+      setMem(updated);
+      saveMemory(updated);
+      setPostEditInstruction('');
+      goToNextPost();
     }
-    setMem(updated);
-    saveMemory(updated);
+  }
+
+  function goToNextPost() {
+    setLikedCurrent(false);
     setPostEditInstruction('');
     if (rIdx < posts.length - 1) {
       setTimeout(() => setRIdx(r => r + 1), 300);
@@ -490,6 +508,86 @@ export default function Home() {
     a.href = image;
     a.download = `basma-saved-${Date.now()}.png`;
     a.click();
+  }
+
+  // ===== SAVED POST EDIT HANDLERS =====
+  function startSavedEdit(sp: SavedPost) {
+    setSavedEditingId(sp.id);
+    setSavedEditText(sp.content);
+    setSavedAiEditId(null);
+  }
+
+  function cancelSavedEdit() {
+    setSavedEditingId(null);
+    setSavedEditText('');
+  }
+
+  function saveSavedEdit() {
+    if (!mem || !savedEditingId || !savedEditText.trim()) return;
+    const updated = { ...mem, savedPosts: (mem.savedPosts || []).map(s => s.id === savedEditingId ? { ...s, content: savedEditText } : s) };
+    setMem(updated);
+    saveMemory(updated);
+    setSavedEditingId(null);
+    setSavedEditText('');
+    showTrainSuccess('تم حفظ التعديل');
+  }
+
+  async function handleSavedAiEdit(sp: SavedPost) {
+    if (!savedAiInstruction.trim() || savedAiLoading || !mem) return;
+    setSavedAiLoading(true);
+    setErr('');
+    try {
+      const res = await fetch('/api/edit-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postContent: sp.content,
+          instruction: savedAiInstruction,
+          goldenRules: mem.goldenRules,
+          spec: mem.spec,
+        }),
+      });
+      const data = await res.json();
+      if (data.editedContent) {
+        const updated = { ...mem, savedPosts: (mem.savedPosts || []).map(s => s.id === sp.id ? { ...s, content: data.editedContent } : s) };
+        setMem(updated);
+        saveMemory(updated);
+        setSavedAiEditId(null);
+        setSavedAiInstruction('');
+        showTrainSuccess('تم تعديل البوست بالذكاء الاصطناعي');
+      } else if (data.error) {
+        setErr(`خطأ في التعديل: ${data.error}`);
+      }
+    } catch (e: any) {
+      setErr(e.message || 'خطأ غير متوقع');
+    }
+    setSavedAiLoading(false);
+  }
+
+  async function generateSavedImage(sp: SavedPost) {
+    setSavedImgLoading(prev => ({ ...prev, [sp.id]: true }));
+    try {
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: sp.topic || sp.content.slice(0, 100),
+          imageStyleRules: mem?.imageStyleRules || [],
+          imageAvoidRules: mem?.imageAvoidRules || [],
+        }),
+      });
+      const data = await res.json();
+      if (data.image && mem) {
+        const updated = { ...mem, savedPosts: (mem.savedPosts || []).map(s => s.id === sp.id ? { ...s, image: data.image } : s) };
+        setMem(updated);
+        saveMemory(updated);
+      } else if (data.error) {
+        setErr(`خطأ في توليد الصورة: ${data.error}`);
+      }
+    } catch (e: any) {
+      setErr(`خطأ في توليد الصورة: ${e.message || 'خطأ غير متوقع'}`);
+    }
+    setSavedImgLoading(prev => ({ ...prev, [sp.id]: false }));
   }
 
   // ===== COMPUTED =====
@@ -1022,10 +1120,48 @@ export default function Home() {
                       <div className="topic-tag" style={{ marginBottom: 14 }}>📌 {sp.topic}</div>
                     )}
 
-                    {/* Content */}
-                    <div style={{ fontSize: 15, lineHeight: 1.9, whiteSpace: 'pre-wrap', direction: 'rtl', textAlign: 'right', color: 'var(--text-primary)', marginBottom: sp.image ? 16 : 0 }}>
-                      {sp.content}
-                    </div>
+                    {/* Content — inline edit or display */}
+                    {savedEditingId === sp.id ? (
+                      <div className="fade-in" style={{ marginBottom: 16 }}>
+                        <textarea
+                          className="textarea-field"
+                          value={savedEditText}
+                          onChange={e => setSavedEditText(e.target.value)}
+                          style={{ minHeight: 120 }}
+                        />
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+                          <button className="memory-edit-save" onClick={saveSavedEdit}>حفظ</button>
+                          <button className="memory-edit-cancel" onClick={cancelSavedEdit}>إلغاء</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 15, lineHeight: 1.9, whiteSpace: 'pre-wrap', direction: 'rtl', textAlign: 'right', color: 'var(--text-primary)', marginBottom: 16 }}>
+                        {sp.content}
+                      </div>
+                    )}
+
+                    {/* AI Edit Input */}
+                    {savedAiEditId === sp.id && (
+                      <div className="fade-in" style={{ marginBottom: 16 }}>
+                        <div className="post-edit-row">
+                          <input
+                            className="input-field post-edit-input"
+                            value={savedAiInstruction}
+                            onChange={e => setSavedAiInstruction(e.target.value)}
+                            placeholder="وش تبي أعدل؟ مثل: خله أقصر، غير النبرة..."
+                            onKeyDown={e => e.key === 'Enter' && handleSavedAiEdit(sp)}
+                            disabled={savedAiLoading}
+                          />
+                          <button
+                            className="post-edit-btn"
+                            disabled={!savedAiInstruction.trim() || savedAiLoading}
+                            onClick={() => handleSavedAiEdit(sp)}
+                          >
+                            {savedAiLoading ? '⏳' : '✏️'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Image */}
                     {sp.image && (
@@ -1044,6 +1180,21 @@ export default function Home() {
                       <button className="saved-post-copy" onClick={() => { navigator.clipboard.writeText(sp.content); showTrainSuccess('تم نسخ البوست'); }}>
                         📋 نسخ النص
                       </button>
+                      <button className="saved-post-copy" onClick={() => startSavedEdit(sp)}>
+                        ✏️ تعديل
+                      </button>
+                      <button className="saved-post-copy" onClick={() => { setSavedAiEditId(savedAiEditId === sp.id ? null : sp.id); setSavedAiInstruction(''); setSavedEditingId(null); }}>
+                        🤖 عدّل بالذكاء
+                      </button>
+                      {!sp.image && (
+                        <button
+                          className="saved-post-copy"
+                          onClick={() => generateSavedImage(sp)}
+                          disabled={savedImgLoading[sp.id]}
+                        >
+                          {savedImgLoading[sp.id] ? '⏳ يولّد...' : '🎨 صمم صورة'}
+                        </button>
+                      )}
                       {sp.image && (
                         <button className="saved-post-copy" onClick={() => downloadSavedImage(sp.image!)}>
                           ⬇️ تحميل الصورة
@@ -1339,14 +1490,25 @@ export default function Home() {
             {err && <div className="error-toast" style={{ marginBottom: 20 }}>⚠️ {err}</div>}
 
             {/* Rating Buttons */}
-            <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
-              <button className="btn-rate dislike" onClick={() => handleRate(false)}>
-                👎 ما عجبني
-              </button>
-              <button className="btn-rate like" onClick={() => handleRate(true)}>
-                👍 عجبني
-              </button>
-            </div>
+            {!likedCurrent ? (
+              <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+                <button className="btn-rate dislike" onClick={() => handleRate(false)}>
+                  👎 ما عجبني
+                </button>
+                <button className="btn-rate like" onClick={() => handleRate(true)}>
+                  👍 عجبني
+                </button>
+              </div>
+            ) : (
+              <div className="fade-in" style={{ marginBottom: 14 }}>
+                <div style={{ textAlign: 'center', marginBottom: 12, color: 'var(--green)', fontWeight: 700, fontSize: 15 }}>
+                  ✓ تم تسجيل إعجابك — بصمة بيتعلم من هالأسلوب
+                </div>
+                <button className="btn-primary" onClick={goToNextPost}>
+                  التالي ←
+                </button>
+              </div>
+            )}
 
             {/* Save Button */}
             <button
