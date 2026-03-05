@@ -595,7 +595,7 @@ export default function Home() {
         <div style={{ padding: '32px 16px', minHeight: 'calc(100vh - 64px)' }}>
           <div className="container">
             <div className="fade-in" style={{ textAlign: 'center', marginBottom: 32 }}>
-              <div className="icon-3d icon-3d-lg purple" style={{ margin: '0 auto 20px' }}>🎓</div>
+              <div style={{ fontSize: 80, margin: '0 auto 20px', lineHeight: 1 }}>🎓</div>
               <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, color: 'var(--text-primary)' }}>
                 تدريب الوكيل
               </h1>
@@ -840,7 +840,7 @@ export default function Home() {
         <div style={{ padding: '32px 16px', minHeight: 'calc(100vh - 64px)' }}>
           <div className="container">
             <div className="fade-in" style={{ textAlign: 'center', marginBottom: 32 }}>
-              <div className="icon-3d icon-3d-lg cyan" style={{ margin: '0 auto 20px' }}>🎨</div>
+              <div style={{ fontSize: 80, margin: '0 auto 20px', lineHeight: 1 }}>🎨</div>
               <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, color: 'var(--text-primary)' }}>
                 استوديو الصور
               </h1>
@@ -993,7 +993,7 @@ export default function Home() {
         <div style={{ padding: '32px 16px', minHeight: 'calc(100vh - 64px)' }}>
           <div className="container">
             <div className="fade-in" style={{ textAlign: 'center', marginBottom: 32 }}>
-              <div className="icon-3d icon-3d-lg gold" style={{ margin: '0 auto 20px' }}>📌</div>
+              <div style={{ fontSize: 80, margin: '0 auto 20px', lineHeight: 1 }}>📌</div>
               <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, color: 'var(--text-primary)' }}>
                 البوستات المحفوظة
               </h1>
