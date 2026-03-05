@@ -146,11 +146,12 @@ export default function Home() {
       key: 'bold-typography',
       label: 'Bold Typography - 1',
       prompt: `Style: Bold Typography
-- Large bold Arabic text as the hero element — pick one punchy key phrase from the topic
+- Large bold Arabic text as the hero element — pick ONE punchy key phrase (5-7 words max)
 - Solid color background (deep navy, black, or rich saturated color)
-- Minimal or no illustrations — text is the star
+- ONLY the headline, nothing else — no subtitles, no labels, no descriptions
 - Clean modern sans-serif Arabic font look
-- High contrast, striking visual impact`,
+- High contrast, striking visual impact
+- Think billboard: BIG text, sparse, zero clutter`,
     },
     {
       key: 'minimal-flat',
@@ -158,9 +159,11 @@ export default function Home() {
       prompt: `Style: Minimal Flat
 - Simple flat geometric shapes and icons
 - Maximum 3 colors palette, lots of white space
-- Small subtle illustrations that support the topic
 - No gradients, no shadows — pure flat design
-- Light clean background, airy and modern`,
+- Light clean background, airy and modern
+- TEXT LIMIT: 1 headline (5-7 words max) + max 3 icon labels (1-2 words each)
+- NO sentences, NO paragraphs — let visuals do the talking
+- Text should be BIG and sparse, not small and dense`,
     },
     {
       key: 'clean-infographic',
@@ -168,27 +171,26 @@ export default function Home() {
       prompt: `Style: Clean Infographic
 - Pure white background
 - Organized sections with colored blocks/cards
-- Icons + short text labels for each point
-- Clear visual hierarchy: big headline at top, content in 2-3 columns below
+- Clear visual hierarchy: big headline at top
 - Use accent colors sparingly: one primary color + one secondary color max
-- Numbered steps or grouped info boxes
 - Thin dividers and subtle shadows on cards
 - Professional, clean, LinkedIn-optimized
-- NO photos, NO gradients, NO clutter`,
+- NO photos, NO gradients, NO clutter
+- TEXT LIMIT: 1 headline (5-7 words max) + max 4 info blocks, each block = icon + 2-3 words ONLY
+- NO sentences, NO long descriptions — just icon + short label per block`,
     },
     {
       key: 'concept-mind-map',
       label: 'Mind Map - 4',
       prompt: `Style: Concept Mind Map
 - White or very light grey background
-- Central topic in a bold circle/box in the middle
-- Branches radiating outward to subtopics
+- Central topic in a bold circle/box in the middle (3 words max)
+- Max 5 branches radiating outward, each branch = 1-2 words ONLY
 - Each branch has a different accent color
 - Clean connecting lines (curved or straight)
-- Short text labels on each node
-- Leaf nodes for supporting details
+- NO sub-branches with long text, NO sentences, NO paragraphs
 - Minimal and elegant — not technical/complex looking
-- Feels like a premium visual summary of the post`,
+- Feels like a premium visual summary, billboard-style: BIG text, sparse`,
     },
   ];
 
