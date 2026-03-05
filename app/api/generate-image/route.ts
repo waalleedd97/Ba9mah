@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, imageStyleRules, imageAvoidRules, isStudio, inputImage, inputMimeType } = await req.json();
+    const { prompt, imageStyleRules, imageAvoidRules, isStudio, inputImage, inputMimeType, styleOverride } = await req.json();
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -21,8 +21,15 @@ export async function POST(req: NextRequest) {
     } else if (isStudio) {
       // Studio create mode: general image generation
       imagePrompt = `Create an image based on this description:\n\n${prompt}`;
+    } else if (styleOverride) {
+      // Styled LinkedIn post image (multi-style generation)
+      imagePrompt = `Create a 1080x1080 pixel square image for a LinkedIn post about the following topic.
+
+${styleOverride}
+
+IMPORTANT: Any text in the image MUST be in Arabic (العربية) — the audience is Arab. All labels, titles, or any written text inside the image must be in Arabic, never English.`;
     } else {
-      // LinkedIn post mode (original behavior)
+      // LinkedIn post mode (default/legacy)
       imagePrompt = `Create a cartoon-style illustration for a LinkedIn post about the following topic.
 
 Style requirements:

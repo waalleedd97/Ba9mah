@@ -49,6 +49,9 @@ export default function Home() {
   const [savedAiInstruction, setSavedAiInstruction] = useState('');
   const [savedAiLoading, setSavedAiLoading] = useState(false);
   const [savedImgLoading, setSavedImgLoading] = useState<Record<string, boolean>>({});
+  // Image grid — 4 styles per generation
+  const [imageGrid, setImageGrid] = useState<Record<string, Array<{ style: string; label: string; image: string | null; loading: boolean }>>>({});
+  const [savedImageGrid, setSavedImageGrid] = useState<Record<string, Array<{ style: string; label: string; image: string | null; loading: boolean }>>>({});
   // Theme
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   // Navbar scroll
@@ -138,28 +141,90 @@ export default function Home() {
     }
   }
 
+  const IMAGE_STYLES = [
+    {
+      key: 'bold-typography',
+      label: '1 - Bold Typography',
+      prompt: `Style: Bold Typography
+- Large bold Arabic text as the hero element — pick one punchy key phrase from the topic
+- Solid color background (deep navy, black, or rich saturated color)
+- Minimal or no illustrations — text is the star
+- Clean modern sans-serif Arabic font look
+- High contrast, striking visual impact`,
+    },
+    {
+      key: 'minimal-flat',
+      label: '2 - Minimal Flat',
+      prompt: `Style: Minimal Flat
+- Simple flat geometric shapes and icons
+- Maximum 3 colors palette, lots of white space
+- Small subtle illustrations that support the topic
+- No gradients, no shadows — pure flat design
+- Light clean background, airy and modern`,
+    },
+    {
+      key: 'dark-cinematic',
+      label: '3 - Dark Cinematic',
+      prompt: `Style: Dark Cinematic
+- Dark/black background
+- Dramatic lighting effects, subtle glow and neon accent color highlights
+- Modern editorial feel, sophisticated and premium look
+- Moody atmosphere with high production value
+- Sleek and polished aesthetic`,
+    },
+    {
+      key: 'saudi-editorial',
+      label: '4 - Saudi Editorial',
+      prompt: `Style: Saudi Editorial
+- High-end Arabic magazine editorial style
+- Elegant Arabic typography as main focus
+- Warm tones: gold, sand, deep green — Saudi/Gulf cultural identity
+- Clean layout like a premium editorial spread
+- Refined, luxurious, culturally rooted design`,
+    },
+  ];
+
   async function generateImage(postId: string, topic: string) {
     setImgLoading(prev => ({ ...prev, [postId]: true }));
-    try {
-      const res = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: topic,
-          imageStyleRules: mem?.imageStyleRules || [],
-          imageAvoidRules: mem?.imageAvoidRules || [],
-        }),
-      });
-      const data = await res.json();
-      if (data.image) {
-        setPosts(prev => prev.map(p => p.id === postId ? { ...p, image: data.image, imageRating: null } : p));
-      } else if (data.error) {
-        setErr(`خطأ في توليد الصورة: ${data.error}`);
+    // Initialize grid with 4 loading slots
+    const initialGrid = IMAGE_STYLES.map(s => ({ style: s.key, label: s.label, image: null as string | null, loading: true }));
+    setImageGrid(prev => ({ ...prev, [postId]: initialGrid }));
+
+    // Fire all 4 requests in parallel
+    const promises = IMAGE_STYLES.map(async (style, idx) => {
+      try {
+        const res = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: topic,
+            imageStyleRules: mem?.imageStyleRules || [],
+            imageAvoidRules: mem?.imageAvoidRules || [],
+            styleOverride: style.prompt,
+          }),
+        });
+        const data = await res.json();
+        setImageGrid(prev => {
+          const grid = [...(prev[postId] || initialGrid)];
+          grid[idx] = { ...grid[idx], image: data.image || null, loading: false };
+          return { ...prev, [postId]: grid };
+        });
+      } catch {
+        setImageGrid(prev => {
+          const grid = [...(prev[postId] || initialGrid)];
+          grid[idx] = { ...grid[idx], image: null, loading: false };
+          return { ...prev, [postId]: grid };
+        });
       }
-    } catch (e: any) {
-      setErr(`خطأ في توليد الصورة: ${e.message || 'خطأ غير متوقع'}`);
-    }
+    });
+
+    await Promise.all(promises);
     setImgLoading(prev => ({ ...prev, [postId]: false }));
+  }
+
+  function selectGridImage(postId: string, image: string) {
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, image, imageRating: null } : p));
+    setImageGrid(prev => { const next = { ...prev }; delete next[postId]; return next; });
   }
 
   async function analyzeDislike(content: string, memory: Memory) {
@@ -566,28 +631,47 @@ export default function Home() {
 
   async function generateSavedImage(sp: SavedPost) {
     setSavedImgLoading(prev => ({ ...prev, [sp.id]: true }));
-    try {
-      const res = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: sp.topic || sp.content.slice(0, 100),
-          imageStyleRules: mem?.imageStyleRules || [],
-          imageAvoidRules: mem?.imageAvoidRules || [],
-        }),
-      });
-      const data = await res.json();
-      if (data.image && mem) {
-        const updated = { ...mem, savedPosts: (mem.savedPosts || []).map(s => s.id === sp.id ? { ...s, image: data.image } : s) };
-        setMem(updated);
-        saveMemory(updated);
-      } else if (data.error) {
-        setErr(`خطأ في توليد الصورة: ${data.error}`);
+    const topic = sp.topic || sp.content.slice(0, 100);
+    const initialGrid = IMAGE_STYLES.map(s => ({ style: s.key, label: s.label, image: null as string | null, loading: true }));
+    setSavedImageGrid(prev => ({ ...prev, [sp.id]: initialGrid }));
+
+    const promises = IMAGE_STYLES.map(async (style, idx) => {
+      try {
+        const res = await fetch('/api/generate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: topic,
+            imageStyleRules: mem?.imageStyleRules || [],
+            imageAvoidRules: mem?.imageAvoidRules || [],
+            styleOverride: style.prompt,
+          }),
+        });
+        const data = await res.json();
+        setSavedImageGrid(prev => {
+          const grid = [...(prev[sp.id] || initialGrid)];
+          grid[idx] = { ...grid[idx], image: data.image || null, loading: false };
+          return { ...prev, [sp.id]: grid };
+        });
+      } catch {
+        setSavedImageGrid(prev => {
+          const grid = [...(prev[sp.id] || initialGrid)];
+          grid[idx] = { ...grid[idx], image: null, loading: false };
+          return { ...prev, [sp.id]: grid };
+        });
       }
-    } catch (e: any) {
-      setErr(`خطأ في توليد الصورة: ${e.message || 'خطأ غير متوقع'}`);
-    }
+    });
+
+    await Promise.all(promises);
     setSavedImgLoading(prev => ({ ...prev, [sp.id]: false }));
+  }
+
+  function selectSavedGridImage(spId: string, image: string) {
+    if (!mem) return;
+    const updated = { ...mem, savedPosts: (mem.savedPosts || []).map(s => s.id === spId ? { ...s, image } : s) };
+    setMem(updated);
+    saveMemory(updated);
+    setSavedImageGrid(prev => { const next = { ...prev }; delete next[spId]; return next; });
   }
 
   // ===== COMPUTED =====
@@ -1163,6 +1247,42 @@ export default function Home() {
                       </div>
                     )}
 
+                    {/* Image Grid (picking phase) */}
+                    {savedImageGrid[sp.id] && (
+                      <div className="fade-in" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 12 }}>
+                          🎨 اختر الستايل المفضل
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                          {savedImageGrid[sp.id].map((item) => (
+                            <div key={item.style} style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+                              <div style={{ aspectRatio: '1', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                {item.loading ? (
+                                  <span style={{ animation: 'spin 1.5s linear infinite', display: 'inline-block', fontSize: 28 }}>🎨</span>
+                                ) : item.image ? (
+                                  <img src={item.image} alt={item.label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>فشل</span>
+                                )}
+                              </div>
+                              <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>{item.label}</span>
+                                {item.image && !item.loading && (
+                                  <button
+                                    className="memory-edit-save"
+                                    style={{ padding: '4px 12px', fontSize: 11 }}
+                                    onClick={() => selectSavedGridImage(sp.id, item.image!)}
+                                  >
+                                    اختر
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Image */}
                     {sp.image && (
                       <div className="saved-post-image">
@@ -1186,7 +1306,7 @@ export default function Home() {
                       <button className="saved-post-copy" onClick={() => { setSavedAiEditId(savedAiEditId === sp.id ? null : sp.id); setSavedAiInstruction(''); setSavedEditingId(null); }}>
                         🤖 عدّل بالذكاء
                       </button>
-                      {!sp.image && (
+                      {!sp.image && !savedImageGrid[sp.id] && (
                         <button
                           className="saved-post-copy"
                           onClick={() => generateSavedImage(sp)}
@@ -1460,6 +1580,39 @@ export default function Home() {
                   </div>
                 )}
               </div>
+            ) : imageGrid[cur.id] ? (
+              <div className="fade-in" style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 14 }}>
+                  🎨 اختر الستايل المفضل
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                  {imageGrid[cur.id].map((item, idx) => (
+                    <div key={item.style} style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+                      <div style={{ aspectRatio: '1', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                        {item.loading ? (
+                          <span style={{ animation: 'spin 1.5s linear infinite', display: 'inline-block', fontSize: 28 }}>🎨</span>
+                        ) : item.image ? (
+                          <img src={item.image} alt={item.label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>فشل</span>
+                        )}
+                      </div>
+                      <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>{item.label}</span>
+                        {item.image && !item.loading && (
+                          <button
+                            className="memory-edit-save"
+                            style={{ padding: '4px 12px', fontSize: 11 }}
+                            onClick={() => selectGridImage(cur.id, item.image!)}
+                          >
+                            اختر
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : (
               <button
                 className="btn-generate-img"
@@ -1467,22 +1620,7 @@ export default function Home() {
                 disabled={isLoadingImg}
                 style={{ marginBottom: 20 }}
               >
-                {isLoadingImg ? (
-                  <>
-                    <span style={{ animation: 'spin 1.5s linear infinite', display: 'inline-block' }}>🎨</span>
-                    <span>يولّد الصورة...</span>
-                    {(mem?.imageStyleRules || []).length > 0 && (
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(يطبق {mem!.imageStyleRules.length} قاعدة)</span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    🎨 صمم صورة للبوست
-                    {(mem?.imageStyleRules || []).length > 0 && (
-                      <span className="tag purple" style={{ fontSize: 11, padding: '3px 10px' }}>ذكي</span>
-                    )}
-                  </>
-                )}
+                🎨 صمم صورة للبوست (4 ستايلات)
               </button>
             )}
 
