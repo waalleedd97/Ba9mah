@@ -144,7 +144,7 @@ export default function Home() {
   const IMAGE_STYLES = [
     {
       key: 'bold-typography',
-      label: '1 - Bold Typography',
+      label: 'Bold Typography - 1',
       prompt: `Style: Bold Typography
 - Large bold Arabic text as the hero element — pick one punchy key phrase from the topic
 - Solid color background (deep navy, black, or rich saturated color)
@@ -154,7 +154,7 @@ export default function Home() {
     },
     {
       key: 'minimal-flat',
-      label: '2 - Minimal Flat',
+      label: 'Minimal Flat - 2',
       prompt: `Style: Minimal Flat
 - Simple flat geometric shapes and icons
 - Maximum 3 colors palette, lots of white space
@@ -163,24 +163,28 @@ export default function Home() {
 - Light clean background, airy and modern`,
     },
     {
-      key: 'dark-cinematic',
-      label: '3 - Dark Cinematic',
-      prompt: `Style: Dark Cinematic
-- Dark/black background
-- Dramatic lighting effects, subtle glow and neon accent color highlights
-- Modern editorial feel, sophisticated and premium look
-- Moody atmosphere with high production value
-- Sleek and polished aesthetic`,
+      key: 'photo-overlay',
+      label: 'Photo Overlay - 3',
+      prompt: `Style: Photo Overlay
+- A high-quality realistic photograph as the background, relevant to the post topic (e.g. business meeting, city skyline, hands on laptop, coffee & notebook)
+- Dark semi-transparent overlay on top of the photo (opacity ~0.55)
+- Large bold white Arabic text centered on the overlay — one short key phrase from the post as the headline
+- Subtle white or accent-colored thin border frame
+- Clean, luxurious, editorial magazine feel
+- NO charts, NO icons, NO cluttered elements — photo + overlay + text only`,
     },
     {
-      key: 'saudi-editorial',
-      label: '4 - Saudi Editorial',
-      prompt: `Style: Saudi Editorial
-- High-end Arabic magazine editorial style
-- Elegant Arabic typography as main focus
-- Warm tones: gold, sand, deep green — Saudi/Gulf cultural identity
-- Clean layout like a premium editorial spread
-- Refined, luxurious, culturally rooted design`,
+      key: 'newspaper-editorial',
+      label: 'Newspaper Editorial - 4',
+      prompt: `Style: Newspaper Editorial
+- Black and white color scheme with ONE accent color only: #FF385C red
+- Typography-driven layout inspired by premium newspapers (NYT, Le Monde style but in Arabic)
+- Bold Arabic headline at the top, large and dominant
+- Thin horizontal rule dividers
+- Small decorative elements: quote marks, small geometric shapes
+- Accent color used ONLY for 1-2 key words or a single underline
+- White background, black text, minimal and sophisticated
+- NO illustrations, NO photos — pure typography and layout`,
     },
   ];
 
