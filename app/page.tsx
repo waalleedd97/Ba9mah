@@ -120,7 +120,20 @@ export default function Home() {
       const data = await res.json();
       if (data.error) { setErr(data.error); setPhase(memory.round > 0 ? 'ready' : 'spec'); return; }
       if (data.posts && data.posts.length > 0) {
-        const newPosts: PostItem[] = data.posts.map((p: any, i: number) => ({
+        // Verify labor law accuracy — fail silently on error
+        let verifiedPosts = data.posts;
+        try {
+          const vRes = await fetch('/api/verify-labor-law', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ posts: data.posts }),
+          });
+          const vData = await vRes.json();
+          if (vData.posts && vData.posts.length === data.posts.length) {
+            verifiedPosts = vData.posts;
+          }
+        } catch {}
+        const newPosts: PostItem[] = verifiedPosts.map((p: any, i: number) => ({
           id: `${Date.now()}-${i}`,
           content: p.content,
           topic: p.topic || '',
