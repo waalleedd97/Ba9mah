@@ -2,6 +2,21 @@
 
 الهدف: نسخة مستقرة تعمل 24/7 بـ Docker، بياناتها على قرص دائم، خلف HTTPS.
 
+## الطريق السريع: أمر واحد
+
+على سيرفر Ubuntu أو Debian جديد أو موجود:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/waalleedd97/Ba9mah/main/scripts/deploy-hetzner.sh -o deploy.sh
+sudo bash deploy.sh --password 'كلمة-مرور-قوية' --anthropic-key sk-ant-... --gemini-key AIza... --domain basma.example.com
+```
+
+السكربت يثبّت Docker إن لزم، يستنسخ المستودع في `/opt/basma`، يكتب `.env` ويولّد `AUTH_SECRET`، يفتح المنافذ، يشغّل الحاويات مع Caddy للـ HTTPS (احذف `--domain` لو عندك reverse proxy)، ويتحقق من الصحة. للتحديث لاحقاً شغّله بدون معاملات.
+
+لسيرفر Hetzner جديد تماماً: الصق `deploy/cloud-init.yaml` في خانة Cloud config عند الإنشاء.
+
+الخطوات اليدوية التفصيلية أدناه لمن يفضّلها.
+
 ## 1) المتطلبات
 
 - سيرفر Ubuntu 22.04 أو 24.04 (أصغر باقة CX/CAX تكفي).
