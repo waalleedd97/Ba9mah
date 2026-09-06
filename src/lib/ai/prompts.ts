@@ -1,0 +1,250 @@
+import type { Post, StyleProfile, StyleProfileData } from '@/lib/types';
+import type { DislikedWithReason } from '@/lib/db/repo';
+import { keywords, overlap, normalizeText } from '@/lib/text';
+import { HOOK_TYPES } from './schemas';
+import { systemText, type SystemBlock } from './anthropic';
+
+/** عرض ملف الأسلوب كـ Markdown ثابت الترتيب (كي يُخزَّن في الكاش) */
+export function renderProfileMarkdown(d: StyleProfileData): string {
+  const list = (items: string[]) => (items.length ? items.map((i) => `- ${i}`).join('\n') : '- (لا يوجد بعد)');
+  return `## ملخص
+${d.summary}
+
+## النبرة والصوت
+${d.voice}
+
+## البنية
+${d.structure}
+
+## الطول
+${d.length}
+
+## الافتتاحيات الناجحة
+${list(d.hooks)}
+
+## التنسيق
+${d.formatting}
+
+## مفردات وتعابير مميزة
+${list(d.vocabulary)}
+
+## حركات مميزة
+${list(d.signature_moves)}
+
+## تجنب
+${list(d.do_not)}
+
+## مواضيع تنجح
+${list(d.topics_that_work)}
+
+(مستوى الثقة: ${d.confidence})`;
+}
+
+/**
+ * اختيار أمثلة متنوعة من البوستات المعجَب بها:
+ * - حتى 2 مرتبطة بالموضوع المطلوب (تشابه كلمات)
+ * - الأحدث، مع تخطي المواضيع المكررة
+ * - عند وجود نسخة معدّلة يدوياً نستخدمها لأنها الأقرب لذوق المستخدم
+ */
+export function selectExamples(liked: Post[], topic: string | undefined, n = 6): Post[] {
+  if (liked.length <= n) return liked;
+  const picked: Post[] = [];
+  const usedTopics = new Set<string>();
+  const add = (p: Post) => {
+    if (picked.some((x) => x.id === p.id)) return;
+    picked.push(p);
+    usedTopics.add(normalizeText(p.topic));
+  };
+
+  if (topic) {
+    const kw = keywords(topic);
+    const scored = liked
+      .map((p) => ({ p, s: overlap(kw, keywords(`${p.topic} ${p.content}`)) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 2);
+    for (const { p } of scored) add(p);
+  }
+
+  for (const p of liked) {
+    if (picked.length >= n) break;
+    if (usedTopics.has(normalizeText(p.topic))) continue;
+    add(p);
+  }
+  for (const p of liked) {
+    if (picked.length >= n) break;
+    add(p);
+  }
+  return picked.slice(0, n);
+}
+
+/** عدد البوستات الاستكشافية من أصل 4 — يقل مع تراكم الإعجابات ويبقى واحد كل ثالث جولة */
+export function explorationCount(likedCount: number, roundsSoFar: number): number {
+  if (likedCount < 8) return 2;
+  if (likedCount < 20) return 1;
+  return (roundsSoFar + 1) % 3 === 0 ? 1 : 0;
+}
+
+const STATIC_GENERATION_RULES = `أنت كاتب محتوى LinkedIn محترف للسوق السعودي. مهمتك كتابة بوستات تُنشر كما هي، بأسلوب المستخدم الذي تعلّمته من ملفه وأمثلته.
+
+قواعد الجودة الثابتة:
+- اكتب بالعربية. اللهجة السعودية البيضاء هي الافتراضي ما لم تنص القواعد الذهبية على غيرها. لا لهجة مصرية ولا فصحى ثقيلة.
+- لا تختلق أرقاماً أو دراسات أو أسماء جهات أو اقتباسات. إذا احتجت رقماً فاذكر معلومة عامة معروفة أو صغ الفكرة بدون رقم.
+- كل بوست يقف وحده: افتتاحية تشد الانتباه من أول سطر، فكرة واحدة واضحة، خاتمة عملية أو سؤال يفتح النقاش.
+- أسطر قصيرة وفراغات بين الفقرات كما هو معتاد على LinkedIn.
+- لا مقدمات ولا شروحات ولا عناوين خارج نص البوست. النص هو ما سيُنشر حرفياً.
+- البوستات الأربعة مختلفة تماماً عن بعضها في الموضوع والافتتاحية والبنية.
+
+أنواع الافتتاحيات المتاحة: ${HOOK_TYPES.join('، ')}.
+
+منهج العمل:
+- البوست "الملتزم": يطبق ملف الأسلوب والقواعد الذهبية حرفياً.
+- البوست "الاستكشافي": يحافظ على النبرة والقواعد الذهبية لكنه يجرب افتتاحية أو بنية غير مذكورة في ملف الأسلوب، ليتعلم النظام حدود ذوق المستخدم.
+- قبل الإخراج راجع كل بوست ضد القواعد الذهبية وقائمة التجنب وأسباب الرفض السابقة، وأصلح أي مخالفة.`;
+
+export interface GenerationContext {
+  spec: string;
+  profile: StyleProfile | null;
+  goldenRules: string[];
+  avoidRules: string[];
+}
+
+export function buildGenerationSystem(ctx: GenerationContext): SystemBlock[] {
+  const parts: string[] = [];
+  parts.push(`التخصص: ${ctx.spec}`);
+  if (ctx.profile) {
+    parts.push(`=== ملف أسلوب المستخدم (الإصدار ${ctx.profile.version}) ===\n${ctx.profile.markdown}`);
+  } else {
+    parts.push('=== ملف الأسلوب ===\nلم يُستخلص بعد. اعتمد على القواعد الذهبية والأمثلة.');
+  }
+  if (ctx.goldenRules.length) {
+    parts.push(`=== القواعد الذهبية (أعلى أولوية، التزم بها دائماً) ===\n${ctx.goldenRules.map((r) => `- ${r}`).join('\n')}`);
+  }
+  if (ctx.avoidRules.length) {
+    parts.push(`=== تجنب تماماً ===\n${ctx.avoidRules.map((r) => `- ${r}`).join('\n')}`);
+  }
+  return [systemText(STATIC_GENERATION_RULES), systemText(parts.join('\n\n'), '5m')];
+}
+
+export interface GenerationUserInput {
+  topic: string | null;
+  examples: Post[];
+  disliked: DislikedWithReason[];
+  recentTopics: string[];
+  exploratory: number;
+  roundNumber: number;
+}
+
+export function buildGenerationUser(input: GenerationUserInput): string {
+  const sections: string[] = [];
+
+  if (input.examples.length) {
+    sections.push(
+      `=== أمثلة أعجبت المستخدم (قلّد أسلوبها لا موضوعها) ===\n` +
+        input.examples
+          .map((p, i) => {
+            const edited = p.originalContent && p.originalContent !== p.content ? ' (عدّلها المستخدم بيده قبل الإعجاب — هذه النسخة النهائية)' : '';
+            return `--- مثال ${i + 1} | الموضوع: ${p.topic}${edited} ---\n${p.content}`;
+          })
+          .join('\n\n'),
+    );
+  }
+
+  if (input.disliked.length) {
+    sections.push(
+      `=== بوستات رفضها المستخدم (لا تكتب بهذا الشكل) ===\n` +
+        input.disliked
+          .map((d, i) => {
+            const why = d.reasons.length ? `\nسبب الرفض: ${d.reasons.join(' | ')}` : '';
+            return `--- مرفوض ${i + 1} | الموضوع: ${d.post.topic} ---\n${d.post.content}${why}`;
+          })
+          .join('\n\n'),
+    );
+  }
+
+  if (input.recentTopics.length) {
+    sections.push(`=== مواضيع كُتبت مؤخراً (لا تكررها ولا تقترب منها) ===\n${input.recentTopics.map((t) => `- ${t}`).join('\n')}`);
+  }
+
+  const committed = 4 - input.exploratory;
+  const task = input.topic
+    ? `اكتب 4 بوستات LinkedIn عن الموضوع التالي: "${input.topic}"\nكل بوست يتناول زاوية مختلفة تماماً من نفس الموضوع.`
+    : `اكتب 4 بوستات LinkedIn جديدة، كل واحد عن موضوع مختلف يهم جمهور التخصص، بمواضيع جديدة ومفيدة وغير مستهلكة.`;
+
+  sections.push(
+    `=== المطلوب (الجولة ${input.roundNumber}) ===\n${task}\n` +
+      `التوزيع: ${committed} بوست ملتزم بملف الأسلوب حرفياً، و${input.exploratory} بوست استكشافي (علّمه exploratory=true).\n` +
+      `نوّع الافتتاحيات: لا يتكرر نوع الافتتاحية بين البوستات الأربعة.`,
+  );
+
+  return sections.join('\n\n');
+}
+
+// ---------------------------------------------------------------- التعلم
+
+export const LEARN_SYSTEM = `أنت محلل أسلوب كتابة خبير. مهمتك استخلاص "ملف أسلوب" دقيق وعملي لكاتب محتوى LinkedIn سعودي من البوستات التي أعجبته والتي رفضها.
+
+مبادئ التحليل:
+- ركّز على ما يميّز المعجَب به عن المرفوض، لا على الصفات العامة لأي بوست جيد.
+- لا تعمم من مثال واحد. كل صفة تذكرها يجب أن تتكرر في عدة أمثلة معجَب بها.
+- إذا عدّل المستخدم بوستاً بيده قبل الإعجاب، فالفرق بين النسخة الأصلية والمعدّلة هو أقوى إشارة لذوقه.
+- أسباب الرفض المسجلة إشارات مباشرة، حوّلها إلى قواعد تجنب واضحة.
+- اكتب الملف بصيغة تعليمات يستطيع كاتب آخر تطبيقها فوراً، بدون إنشاء أو مديح.
+- حدد مستوى الثقة بحسب عدد الأمثلة: أقل من 8 معجَب بها = low، حتى 20 = medium، أكثر = high.
+- إذا وُجد ملف سابق فحدّثه بدل البدء من الصفر: احتفظ بما تأكد، وعدّل ما تناقض مع البيانات الجديدة.`;
+
+export interface LearnInput {
+  spec: string;
+  liked: Post[];
+  disliked: DislikedWithReason[];
+  goldenRules: string[];
+  avoidRules: string[];
+  previous: StyleProfile | null;
+}
+
+export function buildLearnUser(input: LearnInput): string {
+  const sections: string[] = [`التخصص: ${input.spec}`];
+  if (input.previous) sections.push(`=== الملف السابق (الإصدار ${input.previous.version}) ===\n${input.previous.markdown}`);
+  if (input.goldenRules.length) sections.push(`=== القواعد الذهبية التي اختارها المستخدم ===\n${input.goldenRules.map((r) => `- ${r}`).join('\n')}`);
+  if (input.avoidRules.length) sections.push(`=== قواعد تجنب حالية ===\n${input.avoidRules.map((r) => `- ${r}`).join('\n')}`);
+  sections.push(
+    `=== بوستات أعجبته (${input.liked.length}) ===\n` +
+      input.liked
+        .map((p, i) => {
+          const base = `--- معجَب ${i + 1} | ${p.topic} | ${p.kind === 'seed' ? 'مثال أولي' : p.kind === 'reference' ? 'أضافه المستخدم كمرجع' : 'مولّد'} ---\n${p.content}`;
+          const diff = p.originalContent && p.originalContent !== p.content ? `\n[النسخة الأصلية قبل تعديل المستخدم]\n${p.originalContent}` : '';
+          return base + diff;
+        })
+        .join('\n\n'),
+  );
+  if (input.disliked.length) {
+    sections.push(
+      `=== بوستات رفضها (${input.disliked.length}) ===\n` +
+        input.disliked
+          .map((d, i) => `--- مرفوض ${i + 1} | ${d.post.topic} ---\n${d.post.content}${d.reasons.length ? `\nأسباب الرفض: ${d.reasons.join(' | ')}` : ''}`)
+          .join('\n\n'),
+    );
+  }
+  sections.push('استخلص ملف الأسلوب الآن.');
+  return sections.join('\n\n');
+}
+
+// ---------------------------------------------------------------- التحليل والتعديل
+
+export const DISLIKE_SYSTEM = `أنت محرر محتوى LinkedIn خبير بالسوق السعودي. يرفض المستخدم بوستاً مولّداً، ومهمتك تشخيص السبب الأرجح بدقة وتحويله إلى قاعدة تجنب عامة تفيد كل البوستات القادمة. كن محدداً: "نبرة وعظية في الخاتمة" أفضل من "أسلوب سيئ".`;
+
+export function buildDislikeUser(post: Post, profileSummary: string | null, avoidRules: string[]): string {
+  const ctx = [profileSummary ? `ملخص أسلوب المستخدم: ${profileSummary}` : '', avoidRules.length ? `قواعد تجنب حالية (لا تكررها حرفياً): ${avoidRules.join(' | ')}` : '']
+    .filter(Boolean)
+    .join('\n');
+  return `${ctx ? ctx + '\n\n' : ''}البوست المرفوض | الموضوع: ${post.topic}\n${post.content}`;
+}
+
+export function buildEditSystem(spec: string, profile: StyleProfile | null, goldenRules: string[]): SystemBlock[] {
+  const parts = [
+    `أنت محرر محتوى LinkedIn محترف للسوق السعودي. التخصص: ${spec}.\nعدّل البوست حسب تعليمات المستخدم فقط، وحافظ على النبرة واللهجة والأسلوب الأصلي. لا تضف مقدمات ولا شروحات داخل النص.`,
+  ];
+  if (profile) parts.push(`=== ملف أسلوب المستخدم ===\n${profile.markdown}`);
+  if (goldenRules.length) parts.push(`=== القواعد الذهبية ===\n${goldenRules.map((r) => `- ${r}`).join('\n')}`);
+  return [systemText(parts.join('\n\n'), '5m')];
+}

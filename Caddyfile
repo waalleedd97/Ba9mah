@@ -1,0 +1,6 @@
+# Caddy: HTTPS تلقائي (Let's Encrypt) أمام التطبيق
+# يُستخدم مع docker-compose.caddy.yml ويقرأ الدومين من BASMA_DOMAIN
+{$BASMA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy basma:3000
+}
