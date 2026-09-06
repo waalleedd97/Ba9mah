@@ -131,7 +131,9 @@ fi
 # ---------- 5) التشغيل ----------
 COMPOSE=(docker compose -f docker-compose.yml)
 [[ -n "$(get_env BASMA_DOMAIN)" ]] && COMPOSE+=(-f docker-compose.caddy.yml)
-log "بناء الصورة وتشغيل الحاويات (قد يأخذ 3-5 دقائق أول مرة)"
+export GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
+export BUILD_DATE="$(date -u +%Y-%m-%dT%H:%MZ)"
+log "بناء الإصدار $GIT_SHA وتشغيل الحاويات (قد يأخذ 3-5 دقائق أول مرة)"
 "${COMPOSE[@]}" up -d --build --remove-orphans
 
 # ---------- 6) فحص الصحة ----------
@@ -148,7 +150,7 @@ done
 docker image prune -f >/dev/null 2>&1 || true
 
 IP="$(curl -s -m 5 https://api.ipify.org || hostname -I | awk '{print $1}')"
-log "تم النشر"
+log "تم النشر — الإصدار $GIT_SHA"
 if [[ -n "$(get_env BASMA_DOMAIN)" ]]; then
   echo "الرابط: https://$(get_env BASMA_DOMAIN)   (الشهادة تُصدر خلال دقيقة إن كان الدومين يشير إلى $IP)"
 else

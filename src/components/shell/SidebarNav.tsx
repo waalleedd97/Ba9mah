@@ -15,7 +15,7 @@ export const NAV: Array<{ href: string; label: string; icon: IconName; match: (p
   { href: '/settings', label: 'الإعدادات', icon: 'settings', match: (p) => p.startsWith('/settings') },
 ];
 
-export function SidebarNav({ savedCount, spec, learning, mock }: { savedCount: number; spec: string; learning: boolean; mock: boolean }) {
+export function SidebarNav({ savedCount, spec, learning, mock, build }: { savedCount: number; spec: string; learning: boolean; mock: boolean; build: string }) {
   const pathname = usePathname();
   const router = useRouter();
   async function logout() {
@@ -53,6 +53,7 @@ export function SidebarNav({ savedCount, spec, learning, mock }: { savedCount: n
           <Icon name="log-out" size={19} />
           تسجيل الخروج
         </button>
+        <div className="subtle" style={{ padding: '4px 12px', fontSize: 11 }}>الإصدار {build}</div>
       </div>
     </aside>
   );

@@ -10,7 +10,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const saved = countSaved();
   return (
     <div className="shell">
-      <SidebarNav savedCount={saved} spec={getSpec()} learning={isLearning()} mock={getEnv().mockAi} />
+      <SidebarNav savedCount={saved} spec={getSpec()} learning={isLearning()} mock={getEnv().mockAi} build={getEnv().BASMA_BUILD_SHA} />
       <div className="main">
         <MobileBars savedCount={saved} />
         {children}
