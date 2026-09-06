@@ -5,8 +5,9 @@
 #  أول مرة (على السيرفر، كـ root أو مع sudo):
 #    curl -fsSL https://raw.githubusercontent.com/waalleedd97/Ba9mah/main/scripts/deploy-hetzner.sh -o deploy.sh
 #    sudo bash deploy.sh --password 'كلمة-مرور-قوية' \
-#         --anthropic-key sk-ant-... --gemini-key AIza... \
+#         [--anthropic-key sk-ant-...] [--gemini-key AIza...] \
 #         [--domain basma.example.com | --no-domain] [--branch main] [--dir /opt/basma]
+#    (بدون المفتاحين يعمل التطبيق بوضع الاختبار حتى تضيفهما لاحقاً بنفس الأمر)
 #
 #  التحديث لاحقاً: sudo bash /opt/basma/scripts/deploy-hetzner.sh
 #  (بدون معاملات: يسحب آخر إصدار ويعيد البناء ويحافظ على .env والبيانات)
@@ -104,8 +105,17 @@ if [[ -z "$secret" || "$secret" == replace-with-* || ${#secret} -lt 32 ]]; then
   log "وُلّد AUTH_SECRET جديد"
 fi
 is_placeholder "$(get_env APP_PASSWORD)" && die "كلمة المرور في .env قيمة نموذجية. شغّل مع: --password 'كلمتك'"
-{ is_placeholder "$(get_env ANTHROPIC_API_KEY)" || [[ "$(get_env ANTHROPIC_API_KEY)" != sk-ant-* ]]; } && die "مفتاح Anthropic في .env غير صالح. شغّل مع: --anthropic-key sk-ant-..."
-g="$(get_env GEMINI_API_KEY)"; { is_placeholder "$g" || [[ ${#g} -lt 30 ]]; } && die "مفتاح Gemini في .env غير صالح. شغّل مع: --gemini-key ..."
+# المفاتيح اختيارية: بدونها يعمل التطبيق بوضع الاختبار (نتائج وهمية) حتى تُضاف
+a="$(get_env ANTHROPIC_API_KEY)"; g="$(get_env GEMINI_API_KEY)"
+KEYS_OK=1
+{ is_placeholder "$a" || [[ "$a" != sk-ant-* ]]; } && KEYS_OK=0
+{ is_placeholder "$g" || [[ ${#g} -lt 30 ]]; } && KEYS_OK=0
+if [[ $KEYS_OK -eq 1 ]]; then
+  set_env BASMA_MOCK_AI 0
+else
+  set_env BASMA_MOCK_AI 1
+  printf '\n\033[1;33mتنبيه: مفاتيح Anthropic/Gemini غير مضبوطة بعد. التطبيق سيعمل بوضع الاختبار (بوستات وصور وهمية)\nحتى تعيد تشغيل السكربت مع --anthropic-key و --gemini-key\033[0m\n'
+fi
 d="$(get_env BASMA_DOMAIN)"; [[ -n "$d" ]] && is_placeholder "$d" && die "الدومين في .env قيمة نموذجية. شغّل مع --domain دومينك أو --no-domain"
 chmod 600 .env
 
@@ -144,5 +154,6 @@ if [[ -n "$(get_env BASMA_DOMAIN)" ]]; then
 else
   echo "التطبيق يستمع على 127.0.0.1:3000 فقط. وجّه الـ reverse proxy إليه، أو أعد التشغيل مع --domain لتفعيل HTTPS تلقائياً."
 fi
+[[ $KEYS_OK -eq 1 ]] || echo "وضع الاختبار مفعّل (بدون مفاتيح). لتفعيل الذكاء الاصطناعي: sudo bash $APP_DIR/scripts/deploy-hetzner.sh --anthropic-key sk-ant-... --gemini-key AIza..."
 echo "السجلات:  docker compose -f $APP_DIR/docker-compose.yml logs -f basma"
 echo "التحديث:  sudo bash $APP_DIR/scripts/deploy-hetzner.sh"
