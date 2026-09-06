@@ -56,8 +56,21 @@ export function selectExamples(liked: Post[], topic: string | undefined, n = 6):
     usedTopics.add(normalizeText(p.topic));
   };
 
-  // ما كتبه المستخدم بنفسه هو المرجع الأول للصوت
-  for (const p of liked.filter((x) => x.kind === 'own').slice(0, 3)) add(p);
+  // ما كتبه المستخدم بنفسه هو المرجع الأول للصوت: الأقرب للموضوع ثم الأحدث
+  const own = liked.filter((x) => x.kind === 'own');
+  if (topic && own.length) {
+    const kw = keywords(topic);
+    own
+      .map((p) => ({ p, s: overlap(kw, keywords(`${p.topic} ${p.content}`)) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 2)
+      .forEach(({ p }) => add(p));
+  }
+  for (const p of own) {
+    if (picked.filter((x) => x.kind === 'own').length >= 3) break;
+    add(p);
+  }
 
   if (topic) {
     const kw = keywords(topic);
@@ -206,11 +219,18 @@ export const LEARN_SYSTEM = `أنت محلل أسلوب كتابة خبير. م�
 - صف الصوت كإنسان لا كقالب: ما الذي يجعله يبدو حقيقياً؟ وما الذي لو أضفته لبدا آلياً؟
 - أسباب الرفض المسجلة إشارات مباشرة، حوّلها إلى قواعد تجنب واضحة.
 - اكتب الملف بصيغة تعليمات يستطيع كاتب آخر تطبيقها فوراً، بدون إنشاء أو مديح.
-- حدد مستوى الثقة بحسب عدد الأمثلة: أقل من 8 معجَب بها = low، حتى 20 = medium، أكثر = high.
+- حدد مستوى الثقة بحسب حجم البيانات: نصوص المستخدم نفسه تزن أكثر. 15+ نصاً من كتابته = high، 5 إلى 14 أو 20+ معجَب = medium، أقل = low.
 - إذا وُجد ملف سابق فحدّثه بدل البدء من الصفر: احتفظ بما تأكد، وعدّل ما تناقض مع البيانات الجديدة.`;
+
+export function buildOwnCorpusBlock(own: Post[], total: number): string {
+  const head = own.length < total ? `عيّنة ممثلة: ${own.length} نصاً من أصل ${total} كتبها المستخدم بنفسه (الأحدث أولاً ثم توزيع من الأقدم)` : `${own.length} نصاً كتبها المستخدم بنفسه`;
+  return `=== نصوص المستخدم — المرجع الأول لصوته ===\n${head}\n\n` + own.map((p, i) => `--- نص ${i + 1} ---\n${p.content}`).join('\n\n');
+}
 
 export interface LearnInput {
   spec: string;
+  ownCount: number;
+  /** المعجَب به من غير نصوص المستخدم (مولّد أو مرجع) */
   liked: Post[];
   disliked: DislikedWithReason[];
   goldenRules: string[];
@@ -220,20 +240,23 @@ export interface LearnInput {
 
 export function buildLearnUser(input: LearnInput): string {
   const sections: string[] = [`التخصص: ${input.spec}`];
+  if (input.ownCount > 0) sections.push(`لدى المستخدم ${input.ownCount} نصاً من كتابته (مرفقة في تعليمات النظام). استخلص الصوت منها أولاً، ثم عدّله بما يلي.`);
   if (input.previous) sections.push(`=== الملف السابق (الإصدار ${input.previous.version}) ===\n${input.previous.markdown}`);
-  if (input.goldenRules.length) sections.push(`=== القواعد الذهبية التي اختارها المستخدم ===\n${input.goldenRules.map((r) => `- ${r}`).join('\n')}`);
+  if (input.goldenRules.length) sections.push(`=== قواعد اختارها المستخدم ===\n${input.goldenRules.map((r) => `- ${r}`).join('\n')}`);
   if (input.avoidRules.length) sections.push(`=== قواعد تجنب حالية ===\n${input.avoidRules.map((r) => `- ${r}`).join('\n')}`);
-  sections.push(
-    `=== بوستات أعجبته (${input.liked.length}) ===\n` +
-      input.liked
-        .map((p, i) => {
-          const label = p.kind === 'own' ? 'كتبه المستخدم بنفسه (المرجع الأول)' : p.kind === 'seed' ? 'مثال أولي عام' : p.kind === 'reference' ? 'بوست لغيره أعجبه أسلوبه' : 'مولّد وأعجبه';
-          const base = `--- معجَب ${i + 1} | ${p.topic} | ${label} ---\n${p.content}`;
-          const diff = p.originalContent && p.originalContent !== p.content ? `\n[النسخة الأصلية قبل تعديل المستخدم]\n${p.originalContent}` : '';
-          return base + diff;
-        })
-        .join('\n\n'),
-  );
+  if (input.liked.length) {
+    sections.push(
+      `=== بوستات أخرى أعجبته (${input.liked.length}) ===\n` +
+        input.liked
+          .map((p, i) => {
+            const label = p.kind === 'seed' ? 'مثال أولي عام' : p.kind === 'reference' ? 'بوست لغيره أعجبه أسلوبه' : 'مولّد وأعجبه';
+            const base = `--- معجَب ${i + 1} | ${p.topic} | ${label} ---\n${p.content}`;
+            const diff = p.originalContent && p.originalContent !== p.content ? `\n[النسخة الأصلية قبل تعديل المستخدم]\n${p.originalContent}` : '';
+            return base + diff;
+          })
+          .join('\n\n'),
+    );
+  }
   if (input.disliked.length) {
     sections.push(
       `=== بوستات رفضها (${input.disliked.length}) ===\n` +

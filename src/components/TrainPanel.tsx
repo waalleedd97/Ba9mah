@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Post, Rule, RuleKind } from '@/lib/types';
 import { api, errorMessage } from '@/lib/client/api';
 import { Button, EmptyState, IconButton, Switch, useToast } from './ui';
+import { BulkPaste } from './BulkPaste';
 import { Icon, type IconName } from './icons';
 
 const SOURCE_LABEL: Record<Rule['source'], string> = { onboarding: 'إعداد أولي', manual: 'يدوي', learned: 'متعلَّم', imported: 'مستورد' };
@@ -70,6 +71,19 @@ export function TrainPanel({ rules: initialRules, liked: initialLiked }: { rules
       toast.error('تعذر الحفظ', errorMessage(e));
     }
   }
+  async function bulkImport(posts: string[], own: boolean) {
+    try {
+      const r = await api<{ added: number; skipped: number; relearning: boolean }>('/api/posts/bulk', { method: 'POST', json: { posts, own } });
+      const { posts: fresh } = await api<{ posts: Post[] }>('/api/posts?rating=liked&limit=500');
+      setLiked(fresh);
+      toast.success(`أُضيف ${r.added} بوست${r.skipped ? ` وتُخطي ${r.skipped} مكرر` : ''}`, r.relearning ? 'بصمة يحدّث ملف أسلوبك في الخلفية' : undefined);
+      return r.added > 0;
+    } catch (e) {
+      toast.error('تعذر الاستيراد', errorMessage(e));
+      return false;
+    }
+  }
+
   async function removePost(id: string) {
     try {
       await api(`/api/posts/${id}`, { method: 'DELETE' });
@@ -98,7 +112,7 @@ export function TrainPanel({ rules: initialRules, liked: initialLiked }: { rules
         ))}
       </div>
 
-      {tab === 'refs' && <ReferenceSection posts={liked} onAdd={addReference} onPatch={patchPost} onRemove={removePost} />}
+      {tab === 'refs' && <ReferenceSection posts={liked} onAdd={addReference} onBulk={bulkImport} onPatch={patchPost} onRemove={removePost} />}
       {tab === 'golden' && <RuleSection icon="zap" tone="" title="القواعد الذهبية" subtitle="أعلى أولوية: تظهر أول تعليمات كل توليد" placeholder="مثل: ابدأ دائماً بسؤال مباشر" rules={byKind('golden')} onAdd={(t) => addRule('golden', t)} onPatch={patchRule} onRemove={removeRule} />}
       {tab === 'avoid' && <RuleSection icon="x" tone="danger" title="أنماط مرفوضة" subtitle="يتجنبها بصمة في كل بوست. تُضاف تلقائياً عند رفض بوست" placeholder="مثل: نبرة وعظية، إحصائيات بدون مصدر" rules={byKind('avoid')} onAdd={(t) => addRule('avoid', t)} onPatch={patchRule} onRemove={removeRule} />}
       {tab === 'images' && (
@@ -178,9 +192,49 @@ function RuleSection({ icon, tone, title, subtitle, placeholder, rules, onAdd, o
   );
 }
 
-function ReferenceSection({ posts, onAdd, onPatch, onRemove }: {
+function BulkSection({ onBulk }: { onBulk: (posts: string[], own: boolean) => Promise<boolean> }) {
+  const [parsed, setParsed] = useState<string[]>([]);
+  const [own, setOwn] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(0);
+  async function run() {
+    if (!parsed.length || busy) return;
+    setBusy(true);
+    if (await onBulk(parsed, own)) {
+      setParsed([]);
+      setKey((k) => k + 1);
+    }
+    setBusy(false);
+  }
+  return (
+    <section className="card fade-up">
+      <div className="row" style={{ gap: 10, marginBottom: 14 }}>
+        <span className="icon-bubble violet" style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center' }}>
+          <Icon name="upload" size={17} />
+        </span>
+        <div>
+          <b>استيراد بالجملة</b>
+          <div className="subtle">عشرات أو مئات البوستات دفعة واحدة، ويُعاد استخلاص ملف أسلوبك بعدها</div>
+        </div>
+      </div>
+      <BulkPaste key={key} onParsed={setParsed} minHeight={160} />
+      <div className="row between mt-2">
+        <label className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 13.5 }}>
+          <Switch on={own} onChange={setOwn} label="كتبتها بنفسي" />
+          {own ? 'كتبتها بنفسي' : 'بوستات لغيري أحب أسلوبها'}
+        </label>
+        <Button variant="primary" onClick={run} disabled={!parsed.length} loading={busy} icon="upload">
+          استورد {parsed.length ? parsed.length : ''} بوست
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function ReferenceSection({ posts, onAdd, onBulk, onPatch, onRemove }: {
   posts: Post[];
   onAdd: (content: string, topic: string, own: boolean) => Promise<boolean>;
+  onBulk: (posts: string[], own: boolean) => Promise<boolean>;
   onPatch: (id: string, patch: { content?: string; topic?: string }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
@@ -200,8 +254,10 @@ function ReferenceSection({ posts, onAdd, onPatch, onRemove }: {
     setBusy(false);
   }
   const visible = showAll ? posts : posts.slice(0, 8);
+  const ownCount = posts.filter((p) => p.kind === 'own').length;
   return (
     <div className="stack">
+      <BulkSection onBulk={onBulk} />
       <section className="card fade-up">
         <div className="row" style={{ gap: 10, marginBottom: 14 }}>
           <span className="icon-bubble" style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'var(--brand-soft)', color: 'var(--brand)' }}>
@@ -227,7 +283,10 @@ function ReferenceSection({ posts, onAdd, onPatch, onRemove }: {
       <section className="card fade-up">
         <div className="row between mb-2">
           <b>المراجع الحالية</b>
-          <span className="pill">{posts.length}</span>
+          <span className="row" style={{ gap: 6 }}>
+            <span className="pill brand">{ownCount} من كتابتك</span>
+            <span className="pill">{posts.length} إجمالاً</span>
+          </span>
         </div>
         {posts.length === 0 ? (
           <EmptyState icon="file-text" title="لا مراجع بعد" text="قيّم بوستات بإعجاب أو أضف نصوصاً تحبها" />

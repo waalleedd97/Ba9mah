@@ -1,7 +1,7 @@
 import { RelearnButton } from '@/components/RelearnButton';
 import { Confidence, Pill, SectionTitle, Stat } from '@/components/ui';
 import { Icon } from '@/components/icons';
-import { countImageRatings, latestProfile, listProfiles, listStyleStats, recentDislikeReasons } from '@/lib/db/repo';
+import { countByKind, countImageRatings, latestProfile, listProfiles, listStyleStats, recentDislikeReasons } from '@/lib/db/repo';
 import { isLearning, ratingsSinceProfile, MIN_NEW_RATINGS } from '@/lib/ai/learn';
 import { IMAGE_STYLES } from '@/lib/images/styles';
 import { requireOnboarded } from '@/lib/guards';
@@ -31,6 +31,7 @@ export default function ProfilePage() {
   const styleStats = listStyleStats();
   const imgRatings = countImageRatings();
   const reasons = recentDislikeReasons(6);
+  const ownCount = countByKind('own');
   const maxShown = Math.max(1, ...styleStats.map((s) => s.shown));
 
 
@@ -60,7 +61,7 @@ export default function ProfilePage() {
               <Confidence level={profile.data.confidence} />
             </div>
             <p style={{ fontSize: 16, lineHeight: 1.9 }}>{profile.data.summary}</p>
-            <div className="subtle mt-2">آخر تحديث {formatDate(profile.createdAt)} · من {profile.likedCount} معجَب و{profile.dislikedCount} مرفوض</div>
+            <div className="subtle mt-2">آخر تحديث {formatDate(profile.createdAt)} · {ownCount} نصاً من كتابتك · {profile.likedCount} معجَب · {profile.dislikedCount} مرفوض</div>
           </section>
           <div className="grid-2 mb-2 fade-up">
             <Block title="النبرة والصوت" text={profile.data.voice} />

@@ -1,6 +1,7 @@
 import { getDb, now } from '../index';
 import { newId } from '@/lib/ids';
 import type { Post, PostKind, Rating } from '@/lib/types';
+import { normalizeText } from '@/lib/text';
 
 interface PostRow {
   id: string;
@@ -208,4 +209,52 @@ export function recentDislikeReasons(limit = 8): string[] {
     .prepare('SELECT reason FROM dislike_reasons ORDER BY created_at DESC LIMIT ?')
     .all(limit) as Array<{ reason: string }>;
   return rows.map((r) => r.reason);
+}
+
+export function countByKind(kind: PostKind): number {
+  return (getDb().prepare('SELECT COUNT(*) AS c FROM posts WHERE kind = ?').get(kind) as { c: number }).c;
+}
+
+/** عيّنة ممثلة من نصوص المستخدم: الأحدث + توزيع متساوٍ من الأقدم */
+export function listOwnPostsSample(max = 60): { posts: Post[]; total: number } {
+  const rows = getDb().prepare(`SELECT * FROM posts WHERE kind = 'own' ORDER BY created_at DESC`).all() as PostRow[];
+  const all = rows.map(rowToPost);
+  if (all.length <= max) return { posts: all, total: all.length };
+  const recentN = Math.ceil(max * 0.66);
+  const recent = all.slice(0, recentN);
+  const rest = all.slice(recentN);
+  const step = rest.length / (max - recentN);
+  const spread = Array.from({ length: max - recentN }, (_, i) => rest[Math.min(rest.length - 1, Math.floor(i * step))]);
+  return { posts: [...recent, ...spread], total: all.length };
+}
+
+/** المعجَب به من غير نصوص المستخدم نفسه (مولّد، مرجع، بذرة) */
+export function listLikedNonOwn(limit = 20): Post[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM posts WHERE rating = 'liked' AND kind <> 'own' ORDER BY rated_at DESC LIMIT ?`)
+    .all(limit) as PostRow[];
+  return rows.map(rowToPost);
+}
+
+/** يضيف نصوص المستخدم بالجملة مع تجاهل المكرر. يرجّع عدد المضاف والمتخطى */
+export function insertOwnPosts(samples: string[], kind: 'own' | 'reference' = 'own'): { added: number; skipped: number } {
+  const db = getDb();
+  const existing = new Set((db.prepare(`SELECT content FROM posts WHERE rating = 'liked'`).all() as Array<{ content: string }>).map((r) => normalizeText(r.content)));
+  let added = 0;
+  let skipped = 0;
+  const ts = Date.now();
+  db.transaction(() => {
+    samples.forEach((raw, i) => {
+      const content = raw.trim();
+      const key = normalizeText(content);
+      if (content.length < 20 || !key || existing.has(key)) {
+        skipped++;
+        return;
+      }
+      existing.add(key);
+      insertPost({ kind, content, topic: content.split('\n')[0].slice(0, 60), rating: 'liked', ratedAt: ts + i, createdAt: ts + i });
+      added++;
+    });
+  })();
+  return { added, skipped };
 }

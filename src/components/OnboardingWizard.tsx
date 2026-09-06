@@ -6,6 +6,7 @@ import type { Round } from '@/lib/types';
 import type { ChipOption, FieldOption } from '@/lib/seed';
 import { api, errorMessage } from '@/lib/client/api';
 import { Button, GenerationLoader, Pill } from './ui';
+import { BulkPaste } from './BulkPaste';
 import { Icon } from './icons';
 
 type Step = 'welcome' | 'field' | 'samples' | 'voice' | 'ready' | 'generating' | 'error';
@@ -41,7 +42,7 @@ export function OnboardingWizard({ fields, voices, languages, avoids, defaultSpe
   const [selected, setSelected] = useState<string[]>([]);
   const [custom, setCustom] = useState('');
   const [showCustom, setShowCustom] = useState(false);
-  const [samples, setSamples] = useState<string[]>(['']);
+  const [samples, setSamples] = useState<string[]>([]);
   const [voice, setVoice] = useState<string[]>([]);
   const [language, setLanguage] = useState<string | null>('saudi');
   const [avoid, setAvoid] = useState<string[]>([]);
@@ -50,7 +51,7 @@ export function OnboardingWizard({ fields, voices, languages, avoids, defaultSpe
   const [genTitle, setGenTitle] = useState('');
 
   const spec = [...fields.filter((f) => selected.includes(f.key)).map((f) => f.label), custom.trim()].filter(Boolean).join('، ') || defaultSpec;
-  const validSamples = samples.map((s) => s.trim()).filter((s) => s.length >= 20);
+  const validSamples = samples;
   const stepIndex = STEPS.indexOf(step);
 
   const toggle = (list: string[], key: string, max: number) => (list.includes(key) ? list.filter((k) => k !== key) : list.length >= max ? [...list.slice(1), key] : [...list, key]);
@@ -60,7 +61,7 @@ export function OnboardingWizard({ fields, voices, languages, avoids, defaultSpe
     setErr('');
     try {
       if (!saved) {
-        setGenTitle(validSamples.length ? 'يستخلص بصمتك من نصوصك' : 'يحفظ اختياراتك');
+        setGenTitle(validSamples.length ? `يستخلص بصمتك من ${validSamples.length} نصاً` : 'يحفظ اختياراتك');
         try {
           await api('/api/onboarding', { method: 'POST', json: { spec, samples: validSamples, voice, language, avoid } });
         } catch (e) {
@@ -176,39 +177,24 @@ export function OnboardingWizard({ fields, voices, languages, avoids, defaultSpe
   if (step === 'samples') {
     return (
       <div className="hero" style={{ alignItems: 'start', paddingTop: 48 }}>
-        <div className="hero-inner fade-up" style={{ maxWidth: 720 }}>
-          <StepHeader stepIndex={stepIndex} title="أعطِ بصمة صوتك الحقيقي" sub="الصق بوستاً أو اثنين كتبتهما بنفسك على LinkedIn (أو أي نص بأسلوبك). هذا أقوى ما يتعلم منه بصمة، وأفضل من أي سؤال." />
-          <div className="stack" style={{ gap: 10 }}>
-            {samples.map((s, i) => (
-              <div key={i} className="card" style={{ padding: 12 }}>
-                <textarea className="textarea" value={s} onChange={(e) => setSamples((arr) => arr.map((x, k) => (k === i ? e.target.value : x)))} placeholder={i === 0 ? 'الصق هنا بوستاً كتبته بنفسك...' : 'بوست آخر (اختياري)'} style={{ minHeight: 120, border: 'none', background: 'transparent', padding: 4 }} maxLength={6000} />
-                <div className="row between">
-                  <span className="subtle">{s.trim().length < 20 ? 'على الأقل سطران' : `${s.trim().length} حرف`}</span>
-                  {samples.length > 1 && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => setSamples((arr) => arr.filter((_, k) => k !== i))}>
-                      <Icon name="x" size={14} /> إزالة
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {samples.length < 5 && (
-              <Button variant="ghost" size="sm" icon="plus" onClick={() => setSamples((arr) => [...arr, ''])} style={{ alignSelf: 'start' }}>
-                أضف بوستاً آخر
-              </Button>
-            )}
+        <div className="hero-inner fade-up" style={{ maxWidth: 760 }}>
+          <StepHeader stepIndex={stepIndex} title="أعطِ بصمة صوتك الحقيقي" sub="كلما زادت نصوصك كان الاستخلاص أدق: الصق عشرات البوستات التي كتبتها، أو ارفع أرشيفك من LinkedIn دفعة واحدة." />
+          <div className="card">
+            <BulkPaste onParsed={setSamples} />
           </div>
           <div className="card mt-2" style={{ padding: 14, borderStyle: 'dashed' }}>
             <div className="row nowrap" style={{ gap: 10 }}>
               <Icon name="info" size={18} style={{ color: 'var(--info)', flex: 'none' }} />
-              <span className="subtle">ما عندك بوستات؟ لا مشكلة. تخطَّ هذه الخطوة وسيتعلم بصمة من تقييماتك وتعديلاتك على أول جولة.</span>
+              <span className="subtle">ما عندك بوستات؟ تخطَّ هذه الخطوة وسيتعلم بصمة من تقييماتك وتعديلاتك، وتقدر تضيف نصوصك لاحقاً من صفحة التدريب.</span>
             </div>
           </div>
           <div className="row between mt-3">
             <Button variant="ghost" onClick={() => setStep('field')} icon="arrow-right">رجوع</Button>
             <div className="row" style={{ gap: 8 }}>
               <Button variant="ghost" onClick={() => setStep('voice')} icon="skip-forward">تخطي</Button>
-              <Button variant="primary" size="lg" disabled={validSamples.length === 0} onClick={() => setStep('voice')} icon="arrow-left">التالي</Button>
+              <Button variant="primary" size="lg" disabled={validSamples.length === 0} onClick={() => setStep('voice')} icon="arrow-left">
+                التالي{validSamples.length ? ` (${validSamples.length})` : ''}
+              </Button>
             </div>
           </div>
         </div>
@@ -280,7 +266,7 @@ export function OnboardingWizard({ fields, voices, languages, avoids, defaultSpe
           </div>
           <h2 style={{ fontSize: 26, marginBottom: 8 }}>جاهز</h2>
           <p className="muted mb-3">
-            {validSamples.length ? `سيستخلص بصمتك من ${validSamples.length === 1 ? 'نصك' : `${validSamples.length} نصوص`} ثم يكتب أول 4 بوستات بصوتك.` : 'سيكتب أول 4 بوستات بأشكال مختلفة ويتعلم من تقييمك لها.'}
+            {validSamples.length ? `سيستخلص بصمتك من ${validSamples.length} نصاً من كتابتك ثم يكتب أول 4 بوستات بصوتك.` : 'سيكتب أول 4 بوستات بأشكال مختلفة ويتعلم من تقييمك لها.'}
           </p>
           <div className="row center mb-2" style={{ gap: 6 }}>
             <Pill tone="brand" icon="briefcase">{spec}</Pill>

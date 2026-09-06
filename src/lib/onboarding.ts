@@ -1,6 +1,6 @@
 import 'server-only';
 import { getDb } from '@/lib/db';
-import { addRule, insertPost, postExists, setSetting } from '@/lib/db/repo';
+import { addRule, insertOwnPosts, insertPost, postExists, setSetting } from '@/lib/db/repo';
 import { AVOID_OPTIONS, LANGUAGE_OPTIONS, SEED_POSTS, VOICE_TRAITS, chipRules } from '@/lib/seed';
 
 export interface OnboardingInput {
@@ -13,6 +13,10 @@ export interface OnboardingInput {
 }
 
 /** يحفظ التخصص، يحوّل الاختيارات إلى قواعد، ويخزن نصوص المستخدم كبصمة أولى */
+function countOwn(): number {
+  return (getDb().prepare(`SELECT COUNT(*) AS c FROM posts WHERE kind = 'own'`).get() as { c: number }).c;
+}
+
 export function completeOnboarding(input: OnboardingInput): { samples: number } {
   const db = getDb();
   const samples = input.samples.map((s) => s.trim()).filter((s) => s.length >= 20);
@@ -21,15 +25,12 @@ export function completeOnboarding(input: OnboardingInput): { samples: number } 
     for (const r of chipRules(VOICE_TRAITS, input.voice)) addRule('golden', r, 'onboarding');
     if (input.language) for (const r of chipRules(LANGUAGE_OPTIONS, [input.language])) addRule('golden', r, 'onboarding');
     for (const r of chipRules(AVOID_OPTIONS, input.avoid)) addRule('avoid', r, 'onboarding');
-    const ts = Date.now();
-    samples.forEach((content, i) => {
-      insertPost({ kind: 'own', content, topic: content.split('\n')[0].slice(0, 60), rating: 'liked', ratedAt: ts + i, createdAt: ts + i });
-    });
+    const { added } = insertOwnPosts(samples);
     // أمثلة البذرة فقط عندما لا توجد نصوص من المستخدم
-    if (samples.length === 0) seedPosts();
+    if (added === 0) seedPosts();
     setSetting('onboarded_at', String(Date.now()));
   })();
-  return { samples: samples.length };
+  return { samples: countOwn() };
 }
 
 export function seedPosts() {
