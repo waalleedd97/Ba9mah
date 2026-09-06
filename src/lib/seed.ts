@@ -136,3 +136,34 @@ export const ONBOARD_QUESTIONS: OnboardQuestion[] = [
     },
   },
 ];
+
+/** مجالات الكتابة — بطاقات الإعداد الأولي (بدون كتابة) */
+export interface FieldOption {
+  key: string;
+  label: string;
+  sub: string;
+  icon: 'briefcase' | 'megaphone' | 'cpu' | 'users' | 'trending-up' | 'coins' | 'pen-tool' | 'book-open';
+  topics: string[];
+}
+
+export const FIELD_OPTIONS: FieldOption[] = [
+  { key: 'entrepreneurship', label: 'ريادة الأعمال', sub: 'تأسيس المشاريع، النمو، التمويل', icon: 'briefcase', topics: ['أول عميل قبل أول منتج', 'التسعير الجريء', 'متى توقف مشروعك', 'الشراكة الصحيحة'] },
+  { key: 'marketing', label: 'التسويق', sub: 'المحتوى، العلامة التجارية، الإعلانات', icon: 'megaphone', topics: ['التسويق بالمحتوى', 'بناء العلامة الشخصية', 'قياس نتائج الحملات', 'الإعلانات المدفوعة'] },
+  { key: 'tech', label: 'التقنية والذكاء الاصطناعي', sub: 'البرمجة، المنتجات الرقمية، AI', icon: 'cpu', topics: ['الذكاء الاصطناعي في العمل اليومي', 'بناء منتج رقمي بسرعة', 'التقنية في الشركات الصغيرة', 'أتمتة المهام'] },
+  { key: 'hr', label: 'الموارد البشرية', sub: 'التوظيف، بيئة العمل، نظام العمل', icon: 'users', topics: ['التوظيف الذكي', 'حقوق الموظف في نظام العمل', 'بيئة العمل والاحتفاظ بالمواهب', 'تقييم الأداء'] },
+  { key: 'sales', label: 'المبيعات', sub: 'الإقناع، العملاء، الصفقات', icon: 'trending-up', topics: ['إغلاق الصفقات', 'التعامل مع الاعتراضات', 'بناء علاقة مع العميل', 'المتابعة بعد البيع'] },
+  { key: 'finance', label: 'المال والاستثمار', sub: 'الادخار، الاستثمار، الأرقام', icon: 'coins', topics: ['الادخار للمشروع', 'قراءة الأرقام المالية', 'التدفق النقدي', 'الاستثمار الذكي'] },
+  { key: 'design', label: 'التصميم والمنتج', sub: 'تجربة المستخدم، الهوية، الإبداع', icon: 'pen-tool', topics: ['البساطة في التصميم', 'تجربة المستخدم الأولى', 'الهوية البصرية', 'قرارات المنتج'] },
+  { key: 'growth', label: 'التطوير الذاتي', sub: 'الإنتاجية، المهارات، القيادة', icon: 'book-open', topics: ['الإنتاجية بدون إرهاق', 'تعلم مهارة جديدة', 'القيادة الهادئة', 'التعلم من الفشل'] },
+];
+
+export const DEFAULT_SPEC = 'محتوى الأعمال';
+
+/** اقتراحات مواضيع حسب التخصص المحفوظ */
+export function topicSuggestions(spec: string, extra: string[] = []): string[] {
+  const out: string[] = [];
+  for (const f of FIELD_OPTIONS) if (spec.includes(f.label)) out.push(...f.topics);
+  if (out.length === 0) out.push(...FIELD_OPTIONS[0].topics);
+  for (const t of extra) if (t && !out.includes(t)) out.unshift(t);
+  return Array.from(new Set(out)).slice(0, 8);
+}

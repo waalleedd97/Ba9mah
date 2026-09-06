@@ -3,11 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, errorMessage } from '@/lib/client/api';
-import { ErrorToast } from './ui';
+import { Button, useToast } from './ui';
+import { Icon } from './icons';
 
 export function LoginForm({ next }: { next?: string }) {
   const router = useRouter();
+  const toast = useToast();
   const [password, setPassword] = useState('');
+  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -21,21 +24,28 @@ export function LoginForm({ next }: { next?: string }) {
       router.replace(next && next.startsWith('/') && !next.startsWith('//') ? next : '/');
       router.refresh();
     } catch (e) {
-      setErr(errorMessage(e));
+      const m = errorMessage(e);
+      setErr(m);
+      toast.error('تعذر الدخول', m);
       setBusy(false);
     }
   }
 
   return (
-    <form onSubmit={submit} className="card login-card fade-in" style={{ padding: 28 }}>
-      <label className="note" htmlFor="pw" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>كلمة المرور</label>
-      <input id="pw" className="input-field" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-      <div style={{ marginTop: 14 }}>
-        <ErrorToast message={err} onClose={() => setErr('')} />
+    <form onSubmit={submit} className="card card-lg scale-in" style={{ width: '100%', maxWidth: 400, margin: '0 auto', textAlign: 'right' }}>
+      <div className="field">
+        <label htmlFor="pw">كلمة المرور</label>
+        <div className="input-row">
+          <input id="pw" className="input input-lg" type={show ? 'text' : 'password'} autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••" style={{ borderColor: err ? 'var(--danger)' : undefined }} />
+          <button type="button" className="btn btn-icon" style={{ width: 52, height: 52 }} onClick={() => setShow((s) => !s)} title={show ? 'إخفاء' : 'إظهار'}>
+            <Icon name="eye" size={18} />
+          </button>
+        </div>
+        {err && <div className="subtle" style={{ color: 'var(--danger)' }}>{err}</div>}
       </div>
-      <button className="btn-primary" type="submit" disabled={!password || busy} style={{ width: '100%' }}>
-        {busy ? 'جارٍ الدخول...' : 'دخول'}
-      </button>
+      <Button variant="primary" size="lg" block type="submit" disabled={!password} loading={busy} className="mt-2" icon="lock">
+        دخول
+      </Button>
     </form>
   );
 }

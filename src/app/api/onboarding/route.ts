@@ -6,7 +6,7 @@ import { ONBOARD_QUESTIONS } from '@/lib/seed';
 
 const Body = z.object({
   spec: z.string().trim().min(2).max(80),
-  choices: z.array(z.enum(['a', 'b'])).length(ONBOARD_QUESTIONS.length),
+  choices: z.array(z.enum(['a', 'b', 'skip'])).max(ONBOARD_QUESTIONS.length),
 });
 
 export const POST = handle(async (req) => {

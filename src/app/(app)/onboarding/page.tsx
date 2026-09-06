@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
 import { isOnboarded } from '@/lib/db/repo';
-import { ONBOARD_QUESTIONS, SPEC_OPTIONS } from '@/lib/seed';
+import { DEFAULT_SPEC, FIELD_OPTIONS, ONBOARD_QUESTIONS } from '@/lib/seed';
 
 export const dynamic = 'force-dynamic';
 
 export default function OnboardingPage() {
   if (isOnboarded()) redirect('/');
-  return <OnboardingWizard questions={ONBOARD_QUESTIONS} specOptions={SPEC_OPTIONS} />;
+  return <OnboardingWizard questions={ONBOARD_QUESTIONS} fields={FIELD_OPTIONS} defaultSpec={DEFAULT_SPEC} />;
 }

@@ -37,10 +37,24 @@ export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
+/** تاريخ ووقت بصيغة رقمية ثابتة (ميلادي، توقيت الرياض) — متطابق بين السيرفر والمتصفح */
 export function formatDate(ts: number): string {
   try {
-    return new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ts));
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Riyadh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(ts));
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+    const h = Number(get('hour'));
+    const suffix = h >= 12 ? 'م' : 'ص';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${get('year')}/${get('month')}/${get('day')} · ${h12}:${get('minute')} ${suffix}`;
   } catch {
-    return new Date(ts).toLocaleString();
+    return new Date(ts).toISOString().slice(0, 16).replace('T', ' ');
   }
 }

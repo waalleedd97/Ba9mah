@@ -3,131 +3,228 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { OnboardQuestion, Round } from '@/lib/types';
+import type { FieldOption } from '@/lib/seed';
 import { api, errorMessage } from '@/lib/client/api';
-import { ErrorToast, Icon3D, LoadingScreen } from './ui';
+import { Button, GenerationLoader, Pill, PostPreview, Stepper, useToast } from './ui';
+import { Icon } from './icons';
+
+type Step = 'welcome' | 'field' | 'style' | 'ready' | 'generating' | 'error';
+type Choice = 'a' | 'b' | 'skip';
 
 interface Props {
   questions: OnboardQuestion[];
-  specOptions: string[];
+  fields: FieldOption[];
+  defaultSpec: string;
 }
 
-export function OnboardingWizard({ questions, specOptions }: Props) {
+export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
   const router = useRouter();
-  const [spec, setSpec] = useState('');
-  const [step, setStep] = useState(-1); // -1 = التخصص
-  const [choices, setChoices] = useState<Array<'a' | 'b'>>([]);
-  const [phase, setPhase] = useState<'form' | 'saving' | 'generating' | 'error'>('form');
+  const toast = useToast();
+  const [step, setStep] = useState<Step>('welcome');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [custom, setCustom] = useState('');
+  const [showCustom, setShowCustom] = useState(false);
+  const [qIdx, setQIdx] = useState(0);
+  const [choices, setChoices] = useState<Choice[]>([]);
   const [err, setErr] = useState('');
+  const [saved, setSaved] = useState(false);
 
-  async function finish(all: Array<'a' | 'b'>) {
-    setPhase('saving');
-    setErr('');
-    try {
-      await api('/api/onboarding', { method: 'POST', json: { spec: spec.trim(), choices: all } });
-      await firstRound();
-    } catch (e) {
-      // 409 = محفوظ مسبقاً → نكمل للتوليد
-      if (e instanceof Error && /مسبقاً/.test(e.message)) await firstRound();
-      else {
-        setErr(errorMessage(e));
-        setPhase('error');
-      }
-    }
+  const spec = [...fields.filter((f) => selected.includes(f.key)).map((f) => f.label), custom.trim()].filter(Boolean).join('، ') || defaultSpec;
+  const chosenRules = choices.map((c, i) => (c === 'skip' ? null : c === 'a' ? questions[i].a.rule : questions[i].b.rule)).filter(Boolean) as string[];
+
+  function toggleField(key: string) {
+    setSelected((s) => (s.includes(key) ? s.filter((k) => k !== key) : s.length >= 2 ? [s[1], key] : [...s, key]));
   }
 
-  async function firstRound() {
-    setPhase('generating');
+  function answer(c: Choice) {
+    const all = [...choices, c];
+    setChoices(all);
+    if (qIdx < questions.length - 1) setTimeout(() => setQIdx((i) => i + 1), 180);
+    else setStep('ready');
+  }
+
+  async function start() {
+    setStep('generating');
+    setErr('');
     try {
+      if (!saved) {
+        try {
+          await api('/api/onboarding', { method: 'POST', json: { spec, choices } });
+        } catch (e) {
+          if (!(e instanceof Error && /مسبقاً/.test(e.message))) throw e;
+        }
+        setSaved(true);
+      }
       const { round } = await api<{ round: Round }>('/api/rounds', { method: 'POST', json: {} });
       router.push(`/round/${round.id}`);
     } catch (e) {
       setErr(errorMessage(e));
-      setPhase('error');
+      setStep('error');
     }
   }
 
-  function pick(choice: 'a' | 'b') {
-    const all = [...choices, choice];
-    setChoices(all);
-    if (step < questions.length - 1) setTimeout(() => setStep((s) => s + 1), 250);
-    else finish(all);
-  }
+  if (step === 'generating') return <GenerationLoader title="يكتب أول 4 بوستات بأسلوبك" subtitle={`التخصص: ${spec}`} />;
 
-  if (phase === 'saving' || phase === 'generating') {
-    return <LoadingScreen title={phase === 'saving' ? 'يحفظ ذوقك...' : 'يكتب أول 4 بوستات...'} subtitle="أول جولة تأخذ قرابة دقيقة" />;
-  }
-
-  if (phase === 'error') {
+  if (step === 'error') {
     return (
-      <div className="center-screen">
-        <div className="container fade-in" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 56, marginBottom: 12 }}>😬</div>
-          <h2 style={{ fontSize: 22, fontWeight: 900, marginBottom: 12 }}>ما قدرنا نولّد أول جولة</h2>
-          <ErrorToast message={err} />
-          <button className="btn-primary" onClick={firstRound}>حاول مرة ثانية</button>
+      <div className="hero">
+        <div className="hero-inner text-center" style={{ maxWidth: 480 }}>
+          <div className="icon-bubble danger" style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 16px', display: 'grid', placeItems: 'center' }}>
+            <Icon name="alert" size={30} />
+          </div>
+          <h2 style={{ fontSize: 24, marginBottom: 8 }}>ما قدرنا نولّد أول جولة</h2>
+          <p className="muted mb-3">{err}</p>
+          <Button variant="primary" onClick={start} icon="refresh">حاول مرة ثانية</Button>
         </div>
       </div>
     );
   }
 
-  if (step === -1) {
+  if (step === 'welcome') {
     return (
-      <div className="center-screen">
-        <div className="container fade-in" style={{ textAlign: 'center' }}>
-          <img src="/icon.svg" alt="بصمة" width={72} height={72} style={{ borderRadius: 20, display: 'block', margin: '0 auto 24px' }} />
-          <h1 style={{ fontSize: 32, fontWeight: 900, marginBottom: 8 }}>بصمة</h1>
-          <p className="note" style={{ fontSize: 16, maxWidth: 400, margin: '0 auto 32px' }}>
-            5 أسئلة سريعة عشان بصمة يفهم ذوقك
-            <br />
-            وبعدها يكتب بوستات جديدة + صور بالذكاء الاصطناعي
+      <div className="hero">
+        <div className="hero-inner text-center fade-up">
+          <div className="brand-hero" style={{ margin: '0 auto 26px' }}>
+            <Icon name="fingerprint" size={38} />
+          </div>
+          <h1 className="hero-title" style={{ marginBottom: 14 }}>
+            بصمة يكتب LinkedIn <span className="grad-text">بأسلوبك أنت</span>
+          </h1>
+          <p className="hero-sub" style={{ margin: '0 auto 28px' }}>
+            قيّم البوستات بإعجاب أو رفض، وبصمة يستخلص أسلوبك ويكتب أقرب لذوقك في كل جولة. بدون كتابة، اختيارات فقط.
           </p>
-          <div className="card" style={{ marginBottom: 20, textAlign: 'right' }}>
-            <div className="row" style={{ marginBottom: 14 }}>
-              <Icon3D color="cyan">💼</Icon3D>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>وش تخصصك؟</div>
+          <div className="value-props text-center" style={{ marginBottom: 30 }}>
+            <div className="value-prop" style={{ alignItems: 'center' }}>
+              <Icon name="brain" size={22} style={{ color: 'var(--violet)' }} />
+              <b>ملف أسلوب يتطور</b>
+              <span>يُستخلص من إعجاباتك ورفضك</span>
             </div>
-            <input className="input-field" value={spec} onChange={(e) => setSpec(e.target.value)} placeholder="مثل: ريادة الأعمال، التسويق الرقمي..." />
-            <div className="row" style={{ marginTop: 12 }}>
-              {specOptions.map((s) => (
-                <button key={s} onClick={() => setSpec(s)} className={`spec-chip ${spec === s ? 'active' : ''}`}>{s}</button>
-              ))}
+            <div className="value-prop" style={{ alignItems: 'center' }}>
+              <Icon name="sparkles" size={22} style={{ color: 'var(--brand)' }} />
+              <b>4 بوستات كل جولة</b>
+              <span>زوايا مختلفة، وواحد يجرب شيئاً جديداً</span>
+            </div>
+            <div className="value-prop" style={{ alignItems: 'center' }}>
+              <Icon name="image" size={22} style={{ color: 'var(--brand-2)' }} />
+              <b>صور بأربعة أنماط</b>
+              <span>تتعلم من اختياراتك أيضاً</span>
             </div>
           </div>
-          <button className="btn-primary" disabled={spec.trim().length < 2} onClick={() => setStep(0)}>التالي ←</button>
+          <Button variant="primary" size="lg" onClick={() => setStep('field')} icon="arrow-left">
+            ابدأ في دقيقة
+          </Button>
         </div>
       </div>
     );
   }
 
-  const q = questions[step];
-  return (
-    <div style={{ padding: '32px 16px', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-      <div className="container">
-        <div className="row between" style={{ marginBottom: 28 }}>
-          <div className="row">
-            <Icon3D color="gold">❓</Icon3D>
-            <span className="note" style={{ fontWeight: 600, fontSize: 15 }}>سؤال {step + 1}/{questions.length}</span>
+  if (step === 'field') {
+    return (
+      <div className="hero" style={{ alignItems: 'start', paddingTop: 48 }}>
+        <div className="hero-inner fade-up">
+          <div className="eyebrow mb-1">الخطوة 1 من 3</div>
+          <h2 style={{ fontSize: 28, marginBottom: 6 }}>عن ماذا تكتب غالباً؟</h2>
+          <p className="muted mb-3">اختر مجالاً أو اثنين، أو تخطَّ وسيتعلم بصمة من تقييماتك.</p>
+          <div className="choice-grid mb-2">
+            {fields.map((f) => {
+              const on = selected.includes(f.key);
+              return (
+                <button key={f.key} type="button" className={`choice-card ${on ? 'selected' : ''}`} onClick={() => toggleField(f.key)}>
+                  <span className="icon-bubble">
+                    <Icon name={f.icon} size={20} />
+                  </span>
+                  <span className="c-title">{f.label}</span>
+                  <span className="c-sub">{f.sub}</span>
+                  {on && (
+                    <span className="check">
+                      <Icon name="check" size={13} strokeWidth={3} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <button type="button" className={`choice-card ${showCustom ? 'selected' : ''}`} onClick={() => setShowCustom((s) => !s)}>
+              <span className="icon-bubble">
+                <Icon name="more" size={20} />
+              </span>
+              <span className="c-title">مجال آخر</span>
+              <span className="c-sub">اكتبه بكلمتين</span>
+            </button>
           </div>
-          <div className="progress-bar">
-            {questions.map((_, i) => (
-              <div key={i} className={`progress-dot ${i < step ? 'done' : i === step ? 'active' : 'pending'}`} />
-            ))}
+          {showCustom && <input className="input input-lg mb-2 fade-in" autoFocus value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="مثل: العقارات، الصحة، القانون..." maxLength={60} />}
+          <div className="row between mt-2">
+            <Button variant="ghost" onClick={() => setStep('style')} icon="skip-forward">
+              تخطي
+            </Button>
+            <Button variant="primary" size="lg" disabled={selected.length === 0 && !custom.trim()} onClick={() => setStep('style')} icon="arrow-left">
+              التالي
+            </Button>
           </div>
         </div>
-        <h2 style={{ fontSize: 28, fontWeight: 900, textAlign: 'center', marginBottom: 28 }}>{q.q}</h2>
-        <div key={step} className="fade-in stack" style={{ gap: 14 }}>
-          {(['a', 'b'] as const).map((ch, i) => {
-            const opt = ch === 'a' ? q.a : q.b;
-            return (
-              <button key={ch} onClick={() => pick(ch)} className="card card-interactive" style={{ textAlign: 'right', width: '100%', display: 'block', animationDelay: `${i * 0.1}s` }}>
-                <div className="row" style={{ marginBottom: 10 }}>
-                  <Icon3D color={ch === 'a' ? 'cyan' : 'pink'}>{ch === 'a' ? '🅰️' : '🅱️'}</Icon3D>
-                  <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--accent)' }}>{opt.label}</span>
-                </div>
-                <div style={{ fontSize: 14, lineHeight: 1.9, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', paddingRight: 56 }}>{opt.text}</div>
-              </button>
-            );
-          })}
+      </div>
+    );
+  }
+
+  if (step === 'style') {
+    const q = questions[qIdx];
+    return (
+      <div className="hero" style={{ alignItems: 'start', paddingTop: 48 }}>
+        <div className="hero-inner" style={{ maxWidth: 860 }}>
+          <div className="row between mb-2">
+            <div>
+              <div className="eyebrow mb-1">الخطوة 2 من 3 · {qIdx + 1}/{questions.length}</div>
+              <h2 style={{ fontSize: 28 }}>{q.q}</h2>
+              <p className="muted">اضغط على البوست الأقرب لأسلوبك</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => answer('skip')} icon="skip-forward">
+              تخطي
+            </Button>
+          </div>
+          <Stepper items={questions.map((_, i) => (i < qIdx ? 'done' : i === qIdx ? 'active' : 'pending'))} />
+          <div key={qIdx} className="ab-grid mt-3 fade-up">
+            {(['a', 'b'] as const).map((k) => {
+              const opt = k === 'a' ? q.a : q.b;
+              return (
+                <button key={k} type="button" className="ab-option" onClick={() => answer(k)}>
+                  <span className="ab-label">
+                    <span className="ab-key">{k === 'a' ? 'A' : 'B'}</span>
+                    {opt.label}
+                  </span>
+                  <PostPreview content={opt.text} subtitle={spec} collapsible={false} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ready
+  return (
+    <div className="hero">
+      <div className="hero-inner scale-in" style={{ maxWidth: 560 }}>
+        <div className="card card-lg card-accent text-center">
+          <div className="icon-bubble success" style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 16px', display: 'grid', placeItems: 'center' }}>
+            <Icon name="check" size={30} strokeWidth={2.5} />
+          </div>
+          <div className="eyebrow mb-1">الخطوة 3 من 3</div>
+          <h2 style={{ fontSize: 26, marginBottom: 8 }}>جاهز! هذه بصمتك الأولى</h2>
+          <p className="muted mb-3">ستتطور مع كل تقييم. الآن نكتب أول 4 بوستات.</p>
+          <div className="row center mb-2">
+            <Pill tone="brand" icon="briefcase">{spec}</Pill>
+            {chosenRules.map((r) => (
+              <Pill key={r} tone="violet">{r}</Pill>
+            ))}
+            {chosenRules.length === 0 && <Pill>بدون تفضيلات مسبقة، سيتعلم من تقييماتك</Pill>}
+          </div>
+          <Button variant="primary" size="lg" block onClick={start} icon="sparkles">
+            ولّد أول 4 بوستات
+          </Button>
+          <button className="btn btn-ghost btn-sm mt-2" onClick={() => { setChoices([]); setQIdx(0); setStep('style'); }}>
+            أعد اختيار الأسلوب
+          </button>
+          {err && <p className="subtle mt-2" style={{ color: 'var(--danger)' }}>{err}</p>}
         </div>
       </div>
     </div>

@@ -4,107 +4,173 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { AppStats, Round, StyleProfile } from '@/lib/types';
+import type { RoundSummary } from '@/lib/db/repo/rounds';
 import { api, errorMessage } from '@/lib/client/api';
-import { ErrorToast, LoadingScreen } from './ui';
+import { formatDate } from '@/lib/text';
+import { Button, Confidence, GenerationLoader, Pill, SectionTitle, Stat, useToast } from './ui';
+import { Icon } from './icons';
 
 interface Props {
   stats: AppStats;
   profile: StyleProfile | null;
   goldenRules: string[];
   currentRound: Round | null;
+  recent: RoundSummary[];
+  suggestions: string[];
+  learning: boolean;
 }
 
-export function Dashboard({ stats, profile, goldenRules, currentRound }: Props) {
+export function Dashboard({ stats, profile, goldenRules, currentRound, recent, suggestions, learning }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [topic, setTopic] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
 
   async function generate() {
     if (busy) return;
     setBusy(true);
-    setErr('');
     try {
       const { round } = await api<{ round: Round }>('/api/rounds', { method: 'POST', json: { topic: topic.trim() || undefined } });
       router.push(`/round/${round.id}`);
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر توليد الجولة', errorMessage(e));
       setBusy(false);
     }
   }
 
   if (busy) {
-    return (
-      <LoadingScreen
-        title={stats.rounds > 0 ? 'يكتب بوستات أقرب لذوقك...' : 'يكتب أول بوستات...'}
-        subtitle={`يستخدم ${stats.liked} مثال ناجح، ${stats.goldenRules} قاعدة ذهبية${profile ? `، وملف الأسلوب v${profile.version}` : ''} · ${stats.exploratoryNext} من 4 استكشافي`}
-      />
-    );
+    return <GenerationLoader title={stats.rounds > 0 ? 'يكتب بوستات أقرب لذوقك' : 'يكتب أول بوستاتك'} subtitle={topic.trim() ? `الموضوع: ${topic.trim()}` : `${stats.liked} مثال ناجح · ${stats.goldenRules} قاعدة ذهبية${profile ? ` · ملف الأسلوب v${profile.version}` : ''}`} />;
   }
 
+  const committed = 4 - stats.exploratoryNext;
+
   return (
-    <div className="center-screen">
-      <div className="container fade-in" style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 72, margin: '0 auto 20px', lineHeight: 1 }}>👋</div>
-        <h1 style={{ fontSize: 30, fontWeight: 900, marginBottom: 6 }}>أهلاً! بصمة يتذكرك</h1>
-        <p className="note" style={{ fontSize: 15, marginBottom: 20 }}>التخصص: {stats.spec}</p>
-
-        <div className="row" style={{ justifyContent: 'center', marginBottom: 24 }}>
-          <span className="tag green">👍 {stats.liked}</span>
-          <span className="tag red">👎 {stats.disliked}</span>
-          <span className="tag gold">⭐ {stats.goldenRules} قاعدة</span>
-          <span className="tag cyan">🔁 {stats.rounds} جولة</span>
-          {profile && <span className="tag purple">🧬 أسلوب v{profile.version}</span>}
+    <div className="page">
+      <div className="page-head fade-up">
+        <div>
+          <div className="eyebrow">مرحباً بعودتك</div>
+          <h1>وش نكتب اليوم؟</h1>
+          <p>{stats.spec}</p>
         </div>
+        {learning ? (
+          <Pill tone="violet" icon="brain">يحدّث ملف أسلوبك الآن</Pill>
+        ) : profile ? (
+          <Link href="/profile">
+            <Pill tone="violet" icon="brain">ملف الأسلوب v{profile.version}</Pill>
+          </Link>
+        ) : null}
+      </div>
 
-        {currentRound?.status === 'rating' && (
-          <div className="section-panel cyan-panel" style={{ marginBottom: 16, textAlign: 'right' }}>
-            <div className="row between">
-              <div>
-                <div style={{ fontWeight: 800, color: 'var(--cyan)', marginBottom: 4 }}>عندك جولة ما خلصت تقييمها</div>
-                <div className="note">الجولة {currentRound.id}{currentRound.topic ? ` · ${currentRound.topic}` : ''}</div>
+      {currentRound?.status === 'rating' && (
+        <div className="card mb-2 fade-up row between" style={{ borderColor: 'var(--info)' }}>
+          <div className="row" style={{ gap: 12 }}>
+            <span className="icon-bubble info" style={{ width: 40, height: 40, borderRadius: 12, display: 'grid', placeItems: 'center' }}>
+              <Icon name="layers" size={18} />
+            </span>
+            <div>
+              <b>عندك جولة ما اكتمل تقييمها</b>
+              <div className="subtle">الجولة {currentRound.id}{currentRound.topic ? ` · ${currentRound.topic}` : ''}</div>
+            </div>
+          </div>
+          <Link href={`/round/${currentRound.id}`} className="btn btn-primary btn-sm">
+            أكمل التقييم <Icon name="arrow-left" size={16} />
+          </Link>
+        </div>
+      )}
+
+      <section className="card card-lg card-accent mb-2 fade-up">
+        <SectionTitle icon="sparkles">جولة جديدة</SectionTitle>
+        <input className="input input-lg" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="موضوع معيّن؟ اتركه فاضياً وبصمة يختار مواضيع جديدة" onKeyDown={(e) => e.key === 'Enter' && generate()} maxLength={200} />
+        <div className="row mt-2" style={{ gap: 8 }}>
+          {suggestions.map((s) => (
+            <button key={s} type="button" className={`chip ${topic === s ? 'active' : ''}`} onClick={() => setTopic(topic === s ? '' : s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <div className="row between mt-3">
+          <span className="subtle row" style={{ gap: 6 }}>
+            <Icon name="target" size={14} /> {committed} ملتزم بأسلوبك
+            <span style={{ opacity: 0.5 }}>·</span>
+            <Icon name="flask" size={14} /> {stats.exploratoryNext} استكشافي
+          </span>
+          <Button variant="primary" size="lg" onClick={generate} icon="sparkles">
+            ولّد 4 بوستات
+          </Button>
+        </div>
+      </section>
+
+      <div className="grid-4 mb-2 fade-up">
+        <Stat icon="thumbs-up" tone="success" value={stats.liked} label="بوست أعجبك" />
+        <Stat icon="thumbs-down" tone="danger" value={stats.disliked} label="بوست رفضته" />
+        <Stat icon="layers" tone="info" value={stats.rounds} label="جولة" />
+        <Stat icon="bookmark" tone="warn" value={stats.saved} label="محفوظ" />
+      </div>
+
+      <div className="grid-2 mb-2 fade-up">
+        <section className="card">
+          <SectionTitle icon="brain" tone="violet" action={<Link href="/profile" className="subtle">التفاصيل</Link>}>
+            ملف أسلوبك
+          </SectionTitle>
+          {profile ? (
+            <>
+              <p style={{ lineHeight: 1.8, fontSize: 14 }}>{profile.data.summary}</p>
+              <div className="row mt-2" style={{ gap: 6 }}>
+                {profile.data.hooks.slice(0, 3).map((h) => (
+                  <Pill key={h} tone="violet">{h}</Pill>
+                ))}
               </div>
-              <Link href={`/round/${currentRound.id}`} className="btn-small primary" style={{ textDecoration: 'none' }}>أكمل التقييم ←</Link>
+              <div className="row between mt-2 subtle">
+                <span>الإصدار {profile.version}</span>
+                <Confidence level={profile.data.confidence} />
+              </div>
+            </>
+          ) : (
+            <p className="muted" style={{ fontSize: 14 }}>
+              يُستخلص تلقائياً بعد أول {Math.max(3 - stats.ratingsSinceProfile, 1)} تقييمات. قيّم جولة وستراه هنا.
+            </p>
+          )}
+        </section>
+        <section className="card">
+          <SectionTitle icon="zap" action={<Link href="/train" className="subtle">تعديل</Link>}>
+            القواعد الذهبية
+          </SectionTitle>
+          {goldenRules.length ? (
+            <div className="stack" style={{ gap: 8 }}>
+              {goldenRules.slice(0, 4).map((r) => (
+                <div key={r} className="row nowrap" style={{ gap: 8, fontSize: 14 }}>
+                  <Icon name="check" size={15} style={{ color: 'var(--success)' }} />
+                  <span>{r}</span>
+                </div>
+              ))}
+              {goldenRules.length > 4 && <span className="subtle">+{goldenRules.length - 4} أخرى</span>}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="muted" style={{ fontSize: 14 }}>أضف قواعد ثابتة يلتزم بها كل بوست من صفحة التدريب.</p>
+          )}
+        </section>
+      </div>
 
-        {profile && (
-          <div className="section-panel purple-panel" style={{ marginBottom: 16, textAlign: 'right' }}>
-            <div className="row between" style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--purple)' }}>🧬 ملف أسلوبك</div>
-              <Link href="/profile" className="note" style={{ textDecoration: 'underline' }}>التفاصيل</Link>
-            </div>
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.8 }}>{profile.data.summary}</div>
-          </div>
-        )}
-
-        {goldenRules.length > 0 && (
-          <div className="section-panel gold-panel" style={{ marginBottom: 16, textAlign: 'right' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--gold)', marginBottom: 10 }}>⭐ القواعد الذهبية</div>
-            {goldenRules.slice(0, 5).map((r, i) => (
-              <div key={i} className="slide-in" style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 6, animationDelay: `${i * 0.08}s` }}>✓ {r}</div>
+      {recent.length > 0 && (
+        <section className="card fade-up">
+          <SectionTitle icon="history" tone="info">آخر الجولات</SectionTitle>
+          <div className="list">
+            {recent.map((r) => (
+              <Link key={r.id} href={`/round/${r.id}`} className="list-item">
+                <span className="grow">
+                  <b>{r.topic || `الجولة ${r.id}`}</b>
+                  <div className="subtle">{formatDate(r.createdAt)}</div>
+                </span>
+                <span className="row" style={{ gap: 6 }}>
+                  {r.status === 'rating' && <Pill tone="info">قيد التقييم</Pill>}
+                  <Pill tone="success" icon="thumbs-up">{r.liked}</Pill>
+                  <Pill tone="danger" icon="thumbs-down">{r.disliked}</Pill>
+                </span>
+              </Link>
             ))}
           </div>
-        )}
-
-        <div className="card" style={{ marginBottom: 16, textAlign: 'right', padding: 22 }}>
-          <div className="row" style={{ marginBottom: 12 }}>
-            <div className="icon-3d icon-3d-sm purple">💡</div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>موضوع البوست</div>
-              <div className="note">اختياري — اتركه فاضي وبصمة يختار مواضيع جديدة</div>
-            </div>
-          </div>
-          <input className="input-field" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="مثل: أهمية التسويق بالمحتوى، كيف تبدأ مشروعك..." onKeyDown={(e) => e.key === 'Enter' && generate()} />
-          <div className="note" style={{ marginTop: 10 }}>
-            الجولة الجاية: {4 - stats.exploratoryNext} ملتزم بأسلوبك + {stats.exploratoryNext} استكشافي
-          </div>
-        </div>
-
-        <ErrorToast message={err} onClose={() => setErr('')} />
-        <button className="btn-primary" onClick={generate}>✨ ولّد 4 بوستات جديدة</button>
-      </div>
+        </section>
+      )}
     </div>
   );
 }

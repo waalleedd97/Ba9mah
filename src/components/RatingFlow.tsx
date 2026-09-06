@@ -6,7 +6,8 @@ import { useState } from 'react';
 import type { AppStats, ImageRecord, PostWithImages, Round } from '@/lib/types';
 import { api, errorMessage } from '@/lib/client/api';
 import { ImageGrid } from './ImageGrid';
-import { ErrorToast, Icon3D, LoadingScreen, useFlash, SuccessFlash } from './ui';
+import { Button, GenerationLoader, IconButton, Pill, PostPreview, Stat, Stepper, useToast } from './ui';
+import { Icon } from './icons';
 
 interface Props {
   round: Round;
@@ -16,71 +17,82 @@ interface Props {
 
 export function RatingFlow({ round, initialPosts, stats }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [posts, setPosts] = useState(initialPosts);
-  const firstUnrated = posts.findIndex((p) => p.rating === null);
-  const [idx, setIdx] = useState(firstUnrated === -1 ? posts.length : firstUnrated);
-  const [likedCurrent, setLikedCurrent] = useState(false);
-  const [err, setErr] = useState('');
-  const [flash, setFlash] = useFlash();
-  const [manualEdit, setManualEdit] = useState<string | null>(null);
-  const [aiInstruction, setAiInstruction] = useState('');
+  const firstUnrated = initialPosts.findIndex((p) => p.rating === null);
+  const [idx, setIdx] = useState(firstUnrated === -1 ? 0 : firstUnrated);
+  const [done, setDone] = useState(firstUnrated === -1 && initialPosts.length > 0);
+  const [leaving, setLeaving] = useState<'' | 'left' | 'right'>('');
+  const [manual, setManual] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
+  const [imgOpen, setImgOpen] = useState(() => Boolean(initialPosts[firstUnrated === -1 ? 0 : firstUnrated]?.selectedImageId || initialPosts[firstUnrated === -1 ? 0 : firstUnrated]?.images.length));
   const [saveBusy, setSaveBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const liked = stats.liked + posts.filter((p) => p.rating === 'liked' && !initialPosts.find((i) => i.id === p.id)?.rating).length;
-  const disliked = stats.disliked + posts.filter((p) => p.rating === 'disliked' && !initialPosts.find((i) => i.id === p.id)?.rating).length;
   const cur = posts[idx];
-  const done = !cur;
+  const newLikes = posts.filter((p, i) => p.rating === 'liked' && initialPosts[i]?.rating !== 'liked').length;
+  const newDislikes = posts.filter((p, i) => p.rating === 'disliked' && initialPosts[i]?.rating !== 'disliked').length;
+  const liked = stats.liked + newLikes;
+  const disliked = stats.disliked + newDislikes;
 
   function patch(id: string, data: Partial<PostWithImages>) {
     setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
   }
 
-  async function rate(likedIt: boolean) {
-    if (!cur) return;
-    setErr('');
-    try {
-      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}/rate`, { method: 'POST', json: { liked: likedIt } });
-      patch(cur.id, { rating: post.rating, ratedAt: post.ratedAt });
-      if (likedIt) setLikedCurrent(true);
-      else setTimeout(next, 300);
-    } catch (e) {
-      setErr(errorMessage(e));
-    }
-  }
-
-  function next() {
-    setLikedCurrent(false);
-    setAiInstruction('');
-    setManualEdit(null);
-    setIdx((i) => i + 1);
+  function goTo(i: number) {
+    if (i < 0 || i >= posts.length) return;
+    setIdx(i);
+    setManual(null);
+    setAiOpen(false);
+    setAiText('');
+    setImgOpen(Boolean(posts[i]?.selectedImageId || posts[i]?.images.length));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function saveManual() {
-    if (!cur || manualEdit === null || !manualEdit.trim()) return;
+  async function rate(likedIt: boolean) {
+    if (!cur) return;
     try {
-      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}`, { method: 'PATCH', json: { content: manualEdit } });
-      patch(cur.id, { content: post.content, originalContent: post.originalContent });
-      setManualEdit(null);
-      setFlash('تم حفظ تعديلك — بصمة بيتعلم من الفرق');
+      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}/rate`, { method: 'POST', json: { liked: likedIt } });
+      const updated = posts.map((p) => (p.id === cur.id ? { ...p, rating: post.rating, ratedAt: post.ratedAt } : p));
+      setPosts(updated);
+      toast.success(likedIt ? 'أعجبك — بصمة يتعلم من هذا الأسلوب' : 'رفضته — يحلل السبب في الخلفية');
+      const nextUnrated = updated.findIndex((p, i) => p.rating === null && i !== idx);
+      setLeaving(likedIt ? 'right' : 'left');
+      setTimeout(() => {
+        setLeaving('');
+        if (nextUnrated === -1) setDone(true);
+        else goTo(nextUnrated);
+      }, 320);
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر حفظ التقييم', errorMessage(e));
+    }
+  }
+
+  async function saveManual() {
+    if (!cur || manual === null || !manual.trim()) return;
+    try {
+      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}`, { method: 'PATCH', json: { content: manual } });
+      patch(cur.id, { content: post.content, originalContent: post.originalContent });
+      setManual(null);
+      toast.success('حُفظ تعديلك', 'الفرق بين النسختين إشارة قوية لذوقك');
+    } catch (e) {
+      toast.error('تعذر الحفظ', errorMessage(e));
     }
   }
 
   async function aiEdit() {
-    if (!cur || !aiInstruction.trim() || aiBusy) return;
+    if (!cur || !aiText.trim() || aiBusy) return;
     setAiBusy(true);
-    setErr('');
     try {
-      const { post, summary } = await api<{ post: PostWithImages; summary: string }>(`/api/posts/${cur.id}/edit`, { method: 'POST', json: { instruction: aiInstruction } });
+      const { post, summary } = await api<{ post: PostWithImages; summary: string }>(`/api/posts/${cur.id}/edit`, { method: 'POST', json: { instruction: aiText } });
       patch(cur.id, { content: post.content, originalContent: post.originalContent });
-      setAiInstruction('');
-      setFlash(summary || 'تم التعديل');
+      setAiText('');
+      setAiOpen(false);
+      toast.success('تم التعديل', summary);
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر التعديل', errorMessage(e));
     } finally {
       setAiBusy(false);
     }
@@ -93,170 +105,171 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
       if (p.savedId) {
         await api(`/api/saved/${p.savedId}`, { method: 'DELETE' });
         patch(p.id, { savedId: null });
+        toast.info('أُزيل من المحفوظات');
       } else {
         const { saved } = await api<{ saved: { id: string } }>('/api/saved', { method: 'POST', json: { postId: p.id } });
         patch(p.id, { savedId: saved.id });
-        setFlash('تم حفظ البوست في المحفوظات');
+        toast.success('حُفظ البوست', 'تجده في المحفوظات مع صورته');
       }
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر الحفظ', errorMessage(e));
     } finally {
       setSaveBusy(false);
     }
   }
 
+  async function copyText(t: string) {
+    await navigator.clipboard.writeText(t);
+    toast.success('تم النسخ');
+  }
+
   async function newRound() {
     setGenerating(true);
-    setErr('');
     try {
       const { round: r } = await api<{ round: Round }>('/api/rounds', { method: 'POST', json: {} });
       router.push(`/round/${r.id}`);
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر التوليد', errorMessage(e));
       setGenerating(false);
     }
   }
 
-  if (generating) return <LoadingScreen title="يكتب بوستات أقرب لذوقك..." subtitle={`يستخدم ${liked} مثال ناجح وملف أسلوبك الحالي`} />;
+  if (generating) return <GenerationLoader title="يكتب بوستات أقرب لذوقك" subtitle={`${liked} مثال ناجح وملف أسلوبك الحالي`} />;
 
-  // ===== ملخص الجولة =====
+  // ===================== ملخص الجولة =====================
   if (done) {
-    const roundLiked = posts.filter((p) => p.rating === 'liked').length;
-    const roundDisliked = posts.filter((p) => p.rating === 'disliked').length;
+    const rl = posts.filter((p) => p.rating === 'liked').length;
+    const rd = posts.filter((p) => p.rating === 'disliked').length;
     return (
-      <div className="page">
-        <div className="container">
-          <div className="fade-in" style={{ textAlign: 'center', marginBottom: 28 }}>
-            <Icon3D color="gold" size="lg">🎉</Icon3D>
-            <h2 style={{ fontSize: 26, fontWeight: 900, margin: '20px 0 6px' }}>الجولة {round.id} خلصت!</h2>
-            <p className="note">
-              {stats.ratingsSinceProfile + posts.length >= 3 ? 'بصمة يحدّث ملف أسلوبك في الخلفية الآن' : 'بصمة سجّل تقييماتك'}
-            </p>
+      <div className="page page-narrow">
+        <div className="card card-lg card-accent text-center mb-2 scale-in">
+          <div className="icon-bubble success" style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 14px', display: 'grid', placeItems: 'center' }}>
+            <Icon name="check" size={30} strokeWidth={2.5} />
           </div>
-          <ErrorToast message={err} onClose={() => setErr('')} />
-          <SuccessFlash message={flash} />
-          <div className="grid-2 fade-in-up" style={{ marginBottom: 20 }}>
-            <div className="stat-box green-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--green)' }}>{roundLiked}</div><div className="note">👍 في هذه الجولة</div></div>
-            <div className="stat-box red-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--red)' }}>{roundDisliked}</div><div className="note">👎 في هذه الجولة</div></div>
-            <div className="stat-box gold-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--gold)' }}>{liked}</div><div className="note">إجمالي المعجَب به</div></div>
-            <div className="stat-box cyan-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--cyan)' }}>{stats.profileVersion ?? '—'}</div><div className="note">إصدار ملف الأسلوب</div></div>
+          <div className="eyebrow mb-1">الجولة {round.id}</div>
+          <h1 style={{ fontSize: 26, marginBottom: 6 }}>اكتملت الجولة</h1>
+          <p className="muted">{stats.ratingsSinceProfile + rl + rd >= 3 ? 'بصمة يحدّث ملف أسلوبك في الخلفية الآن' : 'كل تقييم يُحلَّل ويحسّن الجولة القادمة'}</p>
+          <div className="grid-3 mt-3" style={{ textAlign: 'right' }}>
+            <Stat icon="thumbs-up" tone="success" value={rl} label="أعجبك" />
+            <Stat icon="thumbs-down" tone="danger" value={rd} label="رفضته" />
+            <Stat icon="bookmark" tone="warn" value={posts.filter((p) => p.savedId).length} label="حفظته" />
           </div>
-          <div className="stack" style={{ marginBottom: 24 }}>
-            {posts.map((p) => (
-              <div key={p.id} className="card" style={{ padding: 18 }}>
-                <div className="row between" style={{ marginBottom: 8 }}>
-                  <div className="row">
-                    <span className="topic-tag" style={{ marginBottom: 0 }}>{p.rating === 'liked' ? '👍' : '👎'} {p.topic}</span>
-                    {p.exploratory && <span className="pill accent">استكشافي</span>}
-                  </div>
-                  <button className={`btn-small ${p.savedId ? 'primary' : ''}`} disabled={saveBusy} onClick={() => toggleSave(p)}>
-                    {p.savedId ? '🔖 محفوظ' : '📌 احفظ'}
-                  </button>
-                </div>
-                <div className="post-body" style={{ fontSize: 14, maxHeight: 120, overflow: 'hidden', maskImage: 'linear-gradient(#000 70%, transparent)' }}>{p.content}</div>
-              </div>
-            ))}
-          </div>
-          <div className="stack">
-            <button className="btn-primary" onClick={newRound}>✨ جولة جديدة — بوستات أقرب لذوقك</button>
-            <Link href="/" className="btn-secondary" style={{ textAlign: 'center', textDecoration: 'none' }}>الرئيسية</Link>
-          </div>
+        </div>
+        <div className="stack mb-3">
+          {posts.map((p, i) => (
+            <div key={p.id} className="list-item fade-up" style={{ animationDelay: `${i * 0.05}s`, alignItems: 'center' }}>
+              <span className={`icon-bubble ${p.rating === 'liked' ? 'success' : 'danger'}`} style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', flex: 'none' }}>
+                <Icon name={p.rating === 'liked' ? 'thumbs-up' : 'thumbs-down'} size={16} />
+              </span>
+              <span className="grow">
+                <b>{p.topic}</b>
+                <div className="subtle" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.content.split('\n')[0]}</div>
+              </span>
+              <span className="row nowrap" style={{ gap: 4 }}>
+                <IconButton icon="eye" label="عرض" size="sm" onClick={() => { setDone(false); goTo(i); }} />
+                <IconButton icon="copy" label="نسخ" size="sm" onClick={() => copyText(p.content)} />
+                <IconButton icon={p.savedId ? 'bookmark-check' : 'bookmark'} label={p.savedId ? 'محفوظ' : 'احفظ'} size="sm" onClick={() => toggleSave(p)} className={p.savedId ? 'btn-success' : ''} />
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="row" style={{ gap: 10 }}>
+          <Button variant="primary" size="lg" onClick={newRound} icon="sparkles" style={{ flex: 1 }}>
+            جولة جديدة أقرب لذوقك
+          </Button>
+          <Link href="/" className="btn btn-lg">الرئيسية</Link>
         </div>
       </div>
     );
   }
 
-  // ===== تقييم بوست =====
+  if (!cur) return null;
+
+  // ===================== تقييم بوست =====================
   return (
-    <div className="page">
-      <div className="container">
-        <div className="fade-in row between" style={{ marginBottom: 20 }}>
-          <div className="row">
-            <Icon3D color="accent">📝</Icon3D>
-            <div>
-              <h2 style={{ fontSize: 22, fontWeight: 900, marginBottom: 2 }}>قيّم البوست</h2>
-              <div className="note">الجولة {round.id} · {idx + 1}/{posts.length}{round.topic ? ` · ${round.topic}` : ''}</div>
-            </div>
-          </div>
-          <div className="row" style={{ gap: 6 }}>
-            <span className="tag green" style={{ fontSize: 12 }}>👍 {liked}</span>
-            <span className="tag red" style={{ fontSize: 12 }}>👎 {disliked}</span>
-          </div>
+    <div className="page page-narrow has-ratebar">
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">الجولة {round.id}</div>
+          <h1 style={{ fontSize: 24 }}>{round.topic ?? 'قيّم البوستات'}</h1>
         </div>
-
-        <div className="progress-bar" style={{ marginBottom: 20 }}>
-          {posts.map((p, i) => (
-            <div key={p.id} className={`progress-dot ${i < idx ? 'done' : i === idx ? 'active' : 'pending'}`} />
-          ))}
+        <div className="row nowrap" style={{ gap: 6 }}>
+          <Pill tone="success" icon="thumbs-up">{liked}</Pill>
+          <Pill tone="danger" icon="thumbs-down">{disliked}</Pill>
         </div>
+      </div>
 
-        <div className="row" style={{ marginBottom: 12 }}>
-          <span className="topic-tag" style={{ marginBottom: 0 }}>📌 {cur.topic}</span>
-          {cur.exploratory && <span className="pill accent" title="بوست يجرب أسلوباً جديداً ليتعلم حدود ذوقك">🧪 استكشافي</span>}
-          {cur.hookType && <span className="pill">{cur.hookType}</span>}
-          {cur.verified && <span className="pill cyan" title={cur.verificationNote ?? 'تم التحقق من نظام العمل'}>⚖️ {cur.verificationNote ? 'صُحح قانونياً' : 'متحقق قانونياً'}</span>}
+      <Stepper items={posts.map((p, i) => (i === idx ? 'active' : p.rating === 'liked' ? 'done' : p.rating === 'disliked' ? 'bad' : 'pending'))} />
+
+      <div className="post-nav mt-2 mb-2">
+        <IconButton icon="chevron-right" label="السابق" onClick={() => goTo(idx - 1)} disabled={idx === 0} />
+        <span className="row" style={{ gap: 8 }}>
+          <b>البوست {idx + 1} من {posts.length}</b>
+          {cur.rating && <Pill tone={cur.rating === 'liked' ? 'success' : 'danger'}>{cur.rating === 'liked' ? 'أعجبك' : 'رفضته'}</Pill>}
+        </span>
+        <IconButton icon="chevron-left" label="التالي" onClick={() => goTo(idx + 1)} disabled={idx === posts.length - 1} />
+      </div>
+
+      <div key={cur.id} className={`fade-up ${leaving ? `leaving-${leaving}` : ''}`}>
+        <div className="row mb-1" style={{ gap: 6 }}>
+          <Pill tone="brand">{cur.topic}</Pill>
+          {cur.hookType && <Pill>{cur.hookType}</Pill>}
+          {cur.exploratory && <Pill tone="violet" icon="flask">استكشافي</Pill>}
+          {cur.verified && <Pill tone="info" icon="shield-check">{cur.verificationNote ? 'صُحح قانونياً' : 'متحقق قانونياً'}</Pill>}
         </div>
-        {cur.verificationNote && <div className="note" style={{ marginBottom: 12 }}>⚖️ {cur.verificationNote}</div>}
+        {cur.verificationNote && <p className="subtle mb-1">{cur.verificationNote}</p>}
 
-        <div key={cur.id} className="card fade-in" style={{ marginBottom: 14 }}>
-          {manualEdit === null ? (
-            <div className="post-body">{cur.content}</div>
-          ) : (
-            <div>
-              <textarea className="textarea-field" value={manualEdit} onChange={(e) => setManualEdit(e.target.value)} style={{ minHeight: 200 }} />
-              <div className="row end" style={{ marginTop: 10 }}>
-                <button className="memory-edit-save" onClick={saveManual}>حفظ</button>
-                <button className="memory-edit-cancel" onClick={() => setManualEdit(null)}>إلغاء</button>
+        <PostPreview
+          content={cur.content}
+          subtitle={stats.spec}
+          editing={
+            manual !== null ? (
+              <div className="stack" style={{ gap: 8 }}>
+                <textarea className="textarea" value={manual} onChange={(e) => setManual(e.target.value)} autoFocus />
+                <div className="row end">
+                  <Button size="sm" variant="ghost" onClick={() => setManual(null)}>إلغاء</Button>
+                  <Button size="sm" variant="primary" onClick={saveManual} icon="check">حفظ التعديل</Button>
+                </div>
               </div>
-            </div>
-          )}
-          {manualEdit === null && (
-            <div className="row end" style={{ marginTop: 12 }}>
-              <button className="btn-small" onClick={() => navigator.clipboard.writeText(cur.content).then(() => setFlash('تم النسخ'))}>📋 نسخ</button>
-              <button className="btn-small" onClick={() => setManualEdit(cur.content)}>✏️ تعديل يدوي</button>
-            </div>
-          )}
+            ) : undefined
+          }
+        />
+
+        <div className="tool-row mt-2">
+          <Button size="sm" icon="copy" onClick={() => copyText(cur.content)}>نسخ</Button>
+          <Button size="sm" icon="pencil" onClick={() => setManual(cur.content)} disabled={manual !== null}>تعديل يدوي</Button>
+          <Button size="sm" icon="wand" onClick={() => setAiOpen((o) => !o)} className={aiOpen ? 'btn-success' : ''}>تعديل بالذكاء</Button>
+          <Button size="sm" icon="image" onClick={() => setImgOpen((o) => !o)} className={imgOpen ? 'btn-success' : ''}>صورة</Button>
+          <Button size="sm" icon={cur.savedId ? 'bookmark-check' : 'bookmark'} onClick={() => toggleSave(cur)} disabled={saveBusy} className={cur.savedId ? 'btn-success' : ''}>
+            {cur.savedId ? 'محفوظ' : 'احفظ'}
+          </Button>
         </div>
 
-        <div className="post-edit-box" style={{ marginBottom: 18 }}>
-          <div className="post-edit-row">
-            <input
-              className="input-field post-edit-input"
-              value={aiInstruction}
-              onChange={(e) => setAiInstruction(e.target.value)}
-              placeholder="عدّل بالذكاء... مثل: خله أقصر، غيّر النبرة، أضف مثال"
-              onKeyDown={(e) => e.key === 'Enter' && aiEdit()}
-              disabled={aiBusy}
-            />
-            <button className="post-edit-btn" disabled={!aiInstruction.trim() || aiBusy} onClick={aiEdit}>
-              {aiBusy ? '⏳' : '🤖'}
-            </button>
-          </div>
-        </div>
-
-        <ImageGrid endpoint={`/api/posts/${cur.id}/images`} initialImages={cur.images} initialSelectedId={cur.selectedImageId} onSelected={(img: ImageRecord) => patch(cur.id, { selectedImageId: img.id })} />
-
-        <ErrorToast message={err} onClose={() => setErr('')} />
-        <SuccessFlash message={flash} />
-
-        {!likedCurrent ? (
-          <div className="row" style={{ gap: 14, marginBottom: 14, flexWrap: 'nowrap' }}>
-            <button className="btn-rate dislike" onClick={() => rate(false)} disabled={cur.rating !== null}>👎 ما عجبني</button>
-            <button className="btn-rate like" onClick={() => rate(true)} disabled={cur.rating !== null}>👍 عجبني</button>
-          </div>
-        ) : (
-          <div className="fade-in" style={{ marginBottom: 14 }}>
-            <div style={{ textAlign: 'center', marginBottom: 12, color: 'var(--green)', fontWeight: 700, fontSize: 15 }}>✓ تم تسجيل إعجابك — بصمة بيتعلم من هالأسلوب</div>
-            <button className="btn-primary" onClick={next}>التالي ←</button>
+        {aiOpen && (
+          <div className="card mt-2 fade-in" style={{ padding: 14 }}>
+            <div className="input-row">
+              <input className="input" value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="وش تبي أعدل؟ مثل: خله أقصر، غيّر النبرة، أضف مثال..." onKeyDown={(e) => e.key === 'Enter' && aiEdit()} disabled={aiBusy} autoFocus />
+              <Button variant="primary" onClick={aiEdit} disabled={!aiText.trim()} loading={aiBusy} icon="wand">عدّل</Button>
+            </div>
           </div>
         )}
 
-        <button className={`btn-save-post ${cur.savedId ? 'saved' : ''}`} onClick={() => toggleSave(cur)} disabled={saveBusy} style={{ marginBottom: 20 }}>
-          {cur.savedId ? '🔖 محفوظ' : '📌 احفظ البوست'}
-        </button>
-
-        <div className="note" style={{ textAlign: 'center' }}>🌊 كل تقييم يُحلَّل في الخلفية ويحسّن الجولة الجاية</div>
+        {imgOpen && (
+          <div className="card mt-2 fade-in" style={{ padding: 14 }}>
+            <ImageGrid endpoint={`/api/posts/${cur.id}/images`} initialImages={cur.images} initialSelectedId={cur.selectedImageId} onSelected={(img: ImageRecord) => patch(cur.id, { selectedImageId: img.id, images: [...cur.images.filter((i) => i.id !== img.id), img] })} />
+          </div>
+        )}
       </div>
+
+      <div className="rate-bar mt-3">
+        <button className={`rate-btn dislike ${cur.rating === 'disliked' ? 'chosen' : ''}`} onClick={() => rate(false)}>
+          <Icon name="thumbs-down" size={20} /> ما عجبني
+        </button>
+        <button className={`rate-btn like ${cur.rating === 'liked' ? 'chosen' : ''}`} onClick={() => rate(true)}>
+          <Icon name="thumbs-up" size={20} /> عجبني
+        </button>
+      </div>
+      <p className="subtle text-center mt-2">كل تقييم يُحلَّل في الخلفية، وكل 3 تقييمات يتحدث ملف أسلوبك</p>
     </div>
   );
 }

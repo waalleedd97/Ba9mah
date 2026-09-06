@@ -3,125 +3,109 @@
 import { useState } from 'react';
 import type { ImageRecord } from '@/lib/types';
 import { api, errorMessage, fileToDataUrl } from '@/lib/client/api';
-import { ErrorToast, Icon3D } from './ui';
+import { Button, EmptyState, Pill, useToast } from './ui';
+import { Icon } from './icons';
 
 export function Studio({ initialImages, styleRuleCount }: { initialImages: ImageRecord[]; styleRuleCount: number }) {
+  const toast = useToast();
   const [mode, setMode] = useState<'create' | 'edit'>('create');
   const [prompt, setPrompt] = useState('');
   const [upload, setUpload] = useState<string | null>(null);
+  const [drag, setDrag] = useState(false);
   const [images, setImages] = useState(initialImages);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
 
   async function generate() {
-    if (!prompt.trim() || busy) return;
-    if (mode === 'edit' && !upload) return;
+    if (!prompt.trim() || busy || (mode === 'edit' && !upload)) return;
     setBusy(true);
-    setErr('');
     try {
       const { image } = await api<{ image: ImageRecord }>('/api/studio', { method: 'POST', json: { prompt: prompt.trim(), image: mode === 'edit' ? upload : undefined } });
       setImages((prev) => [image, ...prev]);
       setPrompt('');
+      toast.success('جاهزة', 'الصورة محفوظة في المعرض');
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر التوليد', errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
-
   async function remove(id: string) {
     try {
       await api(`/api/images/${id}`, { method: 'DELETE' });
       setImages((prev) => prev.filter((i) => i.id !== id));
     } catch (e) {
-      setErr(errorMessage(e));
+      toast.error('تعذر الحذف', errorMessage(e));
     }
   }
-
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.size > 8 * 1024 * 1024) {
-      setErr('الصورة أكبر من 8 ميغابايت');
-      return;
-    }
-    setUpload(await fileToDataUrl(f));
+  async function pick(file?: File) {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) return toast.error('الصورة أكبر من 8 ميغابايت');
+    if (!file.type.startsWith('image/')) return toast.error('الملف ليس صورة');
+    setUpload(await fileToDataUrl(file));
   }
 
   return (
     <div className="page">
-      <div className="container">
-        <div className="page-head fade-in">
-          <div className="emoji">🎨</div>
-          <h1>استوديو الصور</h1>
-          <p>ولّد صور بالذكاء الاصطناعي أو عدّل على صور موجودة — تُحفظ كلها هنا</p>
+      <div className="page-head fade-up">
+        <div>
+          <div className="eyebrow">الاستوديو</div>
+          <h1>صور بالذكاء الاصطناعي</h1>
+          <p>ولّد صوراً حرة أو عدّل على صورك، وكلها تُحفظ هنا</p>
         </div>
-
-        <div className="studio-toggle">
-          <button className={`studio-toggle-btn ${mode === 'create' ? 'active' : ''}`} onClick={() => setMode('create')}>توليد جديد</button>
-          <button className={`studio-toggle-btn ${mode === 'edit' ? 'active' : ''}`} onClick={() => setMode('edit')}>تعديل صورة</button>
-        </div>
-
-        <div className="card fade-in" style={{ padding: 22, marginBottom: 20 }}>
-          <div className="row" style={{ marginBottom: 14 }}>
-            <Icon3D color={mode === 'create' ? 'accent' : 'cyan'}>{mode === 'create' ? '✨' : '✏️'}</Icon3D>
-            <div>
-              <h3 style={{ fontSize: 16, fontWeight: 800 }}>{mode === 'create' ? 'توليد صورة جديدة' : 'تعديل صورة موجودة'}</h3>
-              <p className="note">{mode === 'create' ? 'اوصف الصورة اللي تبيها' : 'ارفع صورة وقل وش تبي تعدل فيها'}</p>
-            </div>
-          </div>
-
-          {mode === 'edit' &&
-            (!upload ? (
-              <div className="studio-upload-area" onClick={() => document.getElementById('studio-file')?.click()}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
-                <div>اضغط لرفع صورة</div>
-                <div className="note">PNG, JPG, WEBP — حتى 8MB</div>
-              </div>
-            ) : (
-              <div className="studio-preview">
-                <img src={upload} alt="الصورة المرفوعة" />
-                <button className="studio-preview-remove" onClick={() => setUpload(null)} title="إزالة">✕</button>
-              </div>
-            ))}
-          <input id="studio-file" type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} />
-
-          <textarea
-            className="textarea-field"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={mode === 'create' ? 'مثل: قطة كرتونية تشرب قهوة في مقهى، شعار لمشروع تقني...' : 'مثل: غيّر الخلفية لأزرق، أضف نص عربي، حوّلها لستايل كرتوني...'}
-            style={{ marginBottom: 12, minHeight: 80 }}
-          />
-          {styleRuleCount > 0 && (
-            <div className="note" style={{ marginBottom: 10 }}>
-              <span className="tag purple" style={{ fontSize: 11, padding: '3px 10px' }}>ذكي</span> يطبق {styleRuleCount} قاعدة ستايل تعلّمها
-            </div>
-          )}
-          <ErrorToast message={err} onClose={() => setErr('')} />
-          <button className="btn-primary" disabled={!prompt.trim() || busy || (mode === 'edit' && !upload)} onClick={generate}>
-            {busy ? <><span style={{ animation: 'spin 1.5s linear infinite', display: 'inline-block' }}>🎨</span> يشتغل...</> : mode === 'create' ? '🎨 ولّد الصورة' : '✏️ عدّل الصورة'}
-          </button>
-        </div>
-
-        {images.length > 0 && (
-          <div className="fade-in-up">
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>📸 الصور ({images.length})</div>
-            <div className="studio-gallery">
-              {images.map((item) => (
-                <div key={item.id} className="studio-gallery-item">
-                  <img src={item.url} alt={item.prompt} />
-                  <div className="studio-gallery-actions">
-                    <a className="img-action-btn refresh" title="تحميل" href={item.url} download>⬇️</a>
-                    <button className="img-action-btn dislike" title="حذف" onClick={() => remove(item.id)}>🗑️</button>
-                  </div>
-                  <div className="studio-gallery-caption">{item.prompt}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {styleRuleCount > 0 && <Pill tone="violet" icon="palette">يطبق {styleRuleCount} قاعدة ستايل تعلّمها</Pill>}
       </div>
+
+      <section className="card card-lg mb-3 fade-up">
+        <div className="tabs mb-2" style={{ maxWidth: 360 }}>
+          <button className={`tab ${mode === 'create' ? 'active' : ''}`} onClick={() => setMode('create')}><Icon name="sparkles" size={15} /> توليد جديد</button>
+          <button className={`tab ${mode === 'edit' ? 'active' : ''}`} onClick={() => setMode('edit')}><Icon name="pencil" size={15} /> تعديل صورة</button>
+        </div>
+        {mode === 'edit' &&
+          (!upload ? (
+            <div
+              className={`upload-area mb-2 ${drag ? 'drag' : ''}`}
+              onClick={() => document.getElementById('studio-file')?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}
+            >
+              <Icon name="upload" size={28} style={{ marginBottom: 8 }} />
+              <div><b>اسحب صورة هنا</b> أو اضغط للاختيار</div>
+              <div className="subtle">PNG · JPG · WEBP حتى 8MB</div>
+            </div>
+          ) : (
+            <div className="upload-preview mb-2">
+              <img src={upload} alt="الصورة المرفوعة" />
+              <button className="overlay-btn" style={{ position: 'absolute', top: 10, insetInlineEnd: 10 }} onClick={() => setUpload(null)} title="إزالة">
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+          ))}
+        <input id="studio-file" type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => pick(e.target.files?.[0])} />
+        <textarea className="textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={mode === 'create' ? 'اوصف الصورة: قطة كرتونية تشرب قهوة في مقهى، شعار لمشروع تقني...' : 'وش تبي تعدل؟ غيّر الخلفية لأزرق، أضف نص عربي، حوّلها لستايل كرتوني...'} style={{ minHeight: 90 }} />
+        <div className="row end mt-2">
+          <Button variant="primary" size="lg" onClick={generate} disabled={!prompt.trim() || (mode === 'edit' && !upload)} loading={busy} icon={mode === 'create' ? 'sparkles' : 'wand'}>
+            {mode === 'create' ? 'ولّد الصورة' : 'عدّل الصورة'}
+          </Button>
+        </div>
+      </section>
+
+      {images.length === 0 ? (
+        <EmptyState icon="image" title="المعرض فاضي" text="أول صورة تولّدها تظهر هنا" />
+      ) : (
+        <div className="gallery fade-up">
+          {images.map((item) => (
+            <div key={item.id} className="gallery-item">
+              <img src={item.url} alt={item.prompt} />
+              <div className="overlay-actions">
+                <a className="overlay-btn" href={item.url} download title="تحميل"><Icon name="download" size={16} /></a>
+                <button className="overlay-btn" onClick={() => remove(item.id)} title="حذف"><Icon name="trash" size={16} /></button>
+              </div>
+              <div className="cap">{item.prompt}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
