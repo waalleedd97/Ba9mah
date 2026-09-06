@@ -1,5 +1,17 @@
 node_modules/
 .next/
+out/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# بيانات التشغيل المحلية (قاعدة البيانات + الصور)
+data/
+
+# أسرار
+.env
 .env.local
+.env.*.local
+
 .DS_Store
-tsconfig.tsbuildinfo
+npm-debug.log*

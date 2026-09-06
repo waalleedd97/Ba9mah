@@ -1,0 +1,22 @@
+#cloud-config
+# ============================================================
+#  إنشاء سيرفر Hetzner جديد جاهز ببصمة من الصفر.
+#  الصق هذا الملف في خانة "Cloud config" عند إنشاء السيرفر
+#  (Ubuntu 24.04) بعد تعبئة القيم بين < >.
+#  بعد 5 دقائق تقريباً يكون التطبيق على https://<domain>
+# ============================================================
+package_update: true
+packages:
+  - git
+  - curl
+  - ufw
+runcmd:
+  - curl -fsSL https://raw.githubusercontent.com/waalleedd97/Ba9mah/main/scripts/deploy-hetzner.sh -o /root/deploy.sh
+  - >
+    bash /root/deploy.sh
+    --password '<APP_PASSWORD>'
+    --anthropic-key '<ANTHROPIC_API_KEY>'
+    --gemini-key '<GEMINI_API_KEY>'
+    --domain '<basma.example.com>'
+    --branch main
+  - ufw --force enable

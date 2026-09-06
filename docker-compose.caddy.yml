@@ -1,0 +1,28 @@
+# ============================================================
+#  طبقة HTTPS اختيارية عبر Caddy (شهادة تلقائية من Let's Encrypt)
+#
+#  BASMA_DOMAIN=basma.example.com \
+#  docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d --build
+#
+#  يشترط: الدومين يشير إلى IP السيرفر، والمنفذان 80 و443 مفتوحان.
+# ============================================================
+services:
+  caddy:
+    image: caddy:2
+    container_name: basma-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      BASMA_DOMAIN: ${BASMA_DOMAIN:?اضبط BASMA_DOMAIN مثل basma.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - basma
+
+volumes:
+  caddy-data:
+  caddy-config:

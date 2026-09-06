@@ -1,0 +1,30 @@
+# ============================================================
+#  بصمة — التشغيل على السيرفر (Hetzner أو أي VPS)
+#
+#  1) cp .env.example .env   ثم عبّئ القيم
+#  2) docker compose up -d --build
+#  3) التطبيق على http://127.0.0.1:3000 خلف الـ reverse proxy
+#     (Caddy / Nginx / Coolify). مثال Caddy في docs/DEPLOY.md
+# ============================================================
+services:
+  basma:
+    build: .
+    image: basma:latest
+    container_name: basma
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+      # منفذ محلي فقط؛ الوصول العام يكون عبر reverse proxy مع HTTPS
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - basma-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  basma-data:
