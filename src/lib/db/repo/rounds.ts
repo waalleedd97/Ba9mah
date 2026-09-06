@@ -72,3 +72,23 @@ export function roundIsFullyRated(id: number): boolean {
     .get(id) as { total: number; unrated: number | null };
   return r.total > 0 && (r.unrated ?? 0) === 0;
 }
+
+export interface RoundSummary extends Round {
+  liked: number;
+  disliked: number;
+  total: number;
+}
+
+export function listRoundSummaries(limit = 6): RoundSummary[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT r.*,
+              COALESCE(SUM(CASE WHEN p.rating = 'liked' THEN 1 ELSE 0 END), 0) AS liked,
+              COALESCE(SUM(CASE WHEN p.rating = 'disliked' THEN 1 ELSE 0 END), 0) AS disliked,
+              COUNT(p.id) AS total
+       FROM rounds r LEFT JOIN posts p ON p.round_id = r.id
+       GROUP BY r.id ORDER BY r.id DESC LIMIT ?`,
+    )
+    .all(limit) as Array<RoundRow & { liked: number; disliked: number; total: number }>;
+  return rows.map((r) => ({ ...rowToRound(r), liked: r.liked, disliked: r.disliked, total: r.total }));
+}

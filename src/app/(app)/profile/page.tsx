@@ -1,4 +1,6 @@
 import { RelearnButton } from '@/components/RelearnButton';
+import { Confidence, Pill, SectionTitle, Stat } from '@/components/ui';
+import { Icon } from '@/components/icons';
 import { countImageRatings, latestProfile, listProfiles, listStyleStats, recentDislikeReasons } from '@/lib/db/repo';
 import { isLearning, ratingsSinceProfile, MIN_NEW_RATINGS } from '@/lib/ai/learn';
 import { IMAGE_STYLES } from '@/lib/images/styles';
@@ -8,7 +10,16 @@ import { formatDate } from '@/lib/text';
 
 export const dynamic = 'force-dynamic';
 
-const CONF: Record<string, string> = { low: 'منخفضة', medium: 'متوسطة', high: 'عالية' };
+function Block({ title, text, items }: { title: string; text?: string; items?: string[] }) {
+return (
+  <div className="card" style={{ padding: 18 }}>
+    <div className="subtle mb-1" style={{ fontWeight: 700 }}>{title}</div>
+    {text && <p style={{ fontSize: 14.5, lineHeight: 1.8 }}>{text}</p>}
+    {items && (items.length ? <div className="row" style={{ gap: 6 }}>{items.map((i) => <Pill key={i} tone="violet">{i}</Pill>)}</div> : <span className="subtle">لا يوجد بعد</span>)}
+  </div>
+);
+}
+
 
 export default function ProfilePage() {
   requireOnboarded();
@@ -20,84 +31,102 @@ export default function ProfilePage() {
   const styleStats = listStyleStats();
   const imgRatings = countImageRatings();
   const reasons = recentDislikeReasons(6);
+  const maxShown = Math.max(1, ...styleStats.map((s) => s.shown));
 
-  const list = (items: string[]) => (items.length ? <ul>{items.map((i, k) => <li key={k}>{i}</li>)}</ul> : <p className="note">لا يوجد بعد</p>);
 
   return (
     <div className="page">
-      <div className="container">
-        <div className="page-head fade-in">
-          <div className="emoji">🧬</div>
-          <h1>ملف أسلوبك</h1>
-          <p>ما تعلّمه بصمة عنك من كل تقييم — يُستخلص من جديد بعد كل {MIN_NEW_RATINGS} تقييمات</p>
+      <div className="page-head fade-up">
+        <div>
+          <div className="eyebrow">ملف الأسلوب</div>
+          <h1>ما تعلّمه بصمة عنك</h1>
+          <p>يُستخلص من جديد بعد كل {MIN_NEW_RATINGS} تقييمات، ويقود كل جولة قادمة</p>
         </div>
+        {learning ? <Pill tone="violet" icon="brain">يحلل أسلوبك الآن</Pill> : <RelearnButton disabled={stats.liked < 3} label={profile ? 'أعد الاستخلاص الآن' : 'استخلص ملف أسلوبي'} />}
+      </div>
 
-        <div className="grid-2 fade-in-up" style={{ marginBottom: 20 }}>
-          <div className="stat-box green-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--green)' }}>{stats.liked}</div><div className="note">بوست أعجبك</div></div>
-          <div className="stat-box red-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--red)' }}>{stats.disliked}</div><div className="note">بوست رفضته</div></div>
-          <div className="stat-box purple-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--purple)' }}>{profile ? `v${profile.version}` : '—'}</div><div className="note">إصدار الملف · ثقة {profile ? CONF[profile.data.confidence] : '—'}</div></div>
-          <div className="stat-box cyan-bg"><div style={{ fontSize: 26, fontWeight: 900, color: 'var(--cyan)' }}>{since}</div><div className="note">تقييم جديد منذ آخر ملف</div></div>
-        </div>
+      <div className="grid-4 mb-3 fade-up">
+        <Stat icon="thumbs-up" tone="success" value={stats.liked} label="بوست أعجبك" />
+        <Stat icon="thumbs-down" tone="danger" value={stats.disliked} label="بوست رفضته" />
+        <Stat icon="brain" tone="violet" value={profile ? `v${profile.version}` : '—'} label={profile ? `الإصدار · ${profile.data.confidence === 'high' ? 'ثقة عالية' : profile.data.confidence === 'medium' ? 'ثقة متوسطة' : 'ثقة منخفضة'}` : 'لم يُستخلص بعد'} />
+        <Stat icon="history" tone="info" value={since} label="تقييم منذ آخر ملف" />
+      </div>
 
-        <div className="card" style={{ padding: 22, marginBottom: 16 }}>
-          {learning && <div className="success-flash" style={{ marginBottom: 12 }}>🧠 بصمة يحلل أسلوبك الآن...</div>}
-          {profile ? (
-            <>
-              <div className="row between" style={{ marginBottom: 14 }}>
-                <div className="note">آخر تحديث: {formatDate(profile.createdAt)} · من {profile.likedCount} معجَب و{profile.dislikedCount} مرفوض</div>
-              </div>
-              <div className="profile-section"><h3>الملخص</h3><p>{profile.data.summary}</p></div>
-              <div className="profile-section"><h3>النبرة والصوت</h3><p>{profile.data.voice}</p></div>
-              <div className="profile-section"><h3>البنية</h3><p>{profile.data.structure}</p></div>
-              <div className="profile-section"><h3>الطول</h3><p>{profile.data.length}</p></div>
-              <div className="profile-section"><h3>الافتتاحيات الناجحة</h3>{list(profile.data.hooks)}</div>
-              <div className="profile-section"><h3>التنسيق</h3><p>{profile.data.formatting}</p></div>
-              <div className="profile-section"><h3>مفردات مميزة</h3>{list(profile.data.vocabulary)}</div>
-              <div className="profile-section"><h3>حركات مميزة</h3>{list(profile.data.signature_moves)}</div>
-              <div className="profile-section"><h3>تجنب</h3>{list(profile.data.do_not)}</div>
-              <div className="profile-section"><h3>مواضيع تنجح</h3>{list(profile.data.topics_that_work)}</div>
-            </>
-          ) : (
-            <p className="note" style={{ marginBottom: 14 }}>لم يُستخلص ملف بعد. قيّم بضعة بوستات أو اضغط الزر أدناه.</p>
-          )}
-          <div style={{ marginTop: 14 }}>
-            <RelearnButton disabled={learning || stats.liked < 3} label={profile ? '🧠 أعد استخلاص الملف الآن' : '🧠 استخلص ملف أسلوبي'} />
+      {profile ? (
+        <>
+          <section className="card card-lg card-accent mb-2 fade-up">
+            <div className="row between mb-2">
+              <SectionTitle icon="brain" tone="violet">الملخص</SectionTitle>
+              <Confidence level={profile.data.confidence} />
+            </div>
+            <p style={{ fontSize: 16, lineHeight: 1.9 }}>{profile.data.summary}</p>
+            <div className="subtle mt-2">آخر تحديث {formatDate(profile.createdAt)} · من {profile.likedCount} معجَب و{profile.dislikedCount} مرفوض</div>
+          </section>
+          <div className="grid-2 mb-2 fade-up">
+            <Block title="النبرة والصوت" text={profile.data.voice} />
+            <Block title="البنية" text={profile.data.structure} />
+            <Block title="الطول" text={profile.data.length} />
+            <Block title="التنسيق" text={profile.data.formatting} />
+            <Block title="الافتتاحيات الناجحة" items={profile.data.hooks} />
+            <Block title="حركات مميزة" items={profile.data.signature_moves} />
+            <Block title="مفردات مميزة" items={profile.data.vocabulary} />
+            <Block title="مواضيع تنجح" items={profile.data.topics_that_work} />
           </div>
-        </div>
-
-        {reasons.length > 0 && (
-          <div className="section-panel red-panel fade-in-up" style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--red)', marginBottom: 10 }}>✕ آخر أسباب الرفض المكتشفة</div>
-            {reasons.map((r, i) => <div key={i} style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 6 }}>● {r}</div>)}
+          <div className="card mb-2 fade-up" style={{ padding: 18, borderColor: 'var(--danger-soft)' }}>
+            <div className="subtle mb-1" style={{ fontWeight: 700, color: 'var(--danger)' }}>يتجنب</div>
+            {profile.data.do_not.length ? <div className="row" style={{ gap: 6 }}>{profile.data.do_not.map((i) => <Pill key={i} tone="danger">{i}</Pill>)}</div> : <span className="subtle">لا يوجد بعد</span>}
           </div>
-        )}
+        </>
+      ) : (
+        <section className="card card-lg text-center mb-2 fade-up">
+          <Icon name="brain" size={34} style={{ color: 'var(--violet)', marginBottom: 10 }} />
+          <h3 style={{ marginBottom: 6 }}>لم يُستخلص ملفك بعد</h3>
+          <p className="muted">قيّم بضعة بوستات، أو اضغط زر الاستخلاص أعلاه إذا كان عندك 3 بوستات معجَب بها على الأقل.</p>
+        </section>
+      )}
 
-        <div className="section-panel purple-panel fade-in-up" style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--purple)', marginBottom: 10 }}>🎨 ذكاء الصور</div>
-          <div className="row" style={{ marginBottom: 10 }}>
-            <span className="tag green" style={{ fontSize: 12 }}>🎨 {imgRatings.liked} صورة أعجبتك</span>
-            <span className="tag red" style={{ fontSize: 12 }}>🎨 {imgRatings.disliked} صورة رفضتها</span>
+      <div className="grid-2 mb-2 fade-up">
+        <section className="card">
+          <SectionTitle icon="x" tone="danger">آخر أسباب الرفض المكتشفة</SectionTitle>
+          {reasons.length ? (
+            <div className="stack" style={{ gap: 8 }}>
+              {reasons.map((r, i) => <div key={i} className="row nowrap" style={{ gap: 8, fontSize: 14 }}><span className="dot" style={{ color: 'var(--danger)' }} /> {r}</div>)}
+            </div>
+          ) : <span className="subtle">لا رفض بعد</span>}
+        </section>
+        <section className="card">
+          <SectionTitle icon="palette" tone="violet">ذكاء الصور</SectionTitle>
+          <div className="row mb-2" style={{ gap: 6 }}>
+            <Pill tone="success" icon="thumbs-up">{imgRatings.liked} صورة</Pill>
+            <Pill tone="danger" icon="thumbs-down">{imgRatings.disliked} صورة</Pill>
           </div>
-          <table className="stats-table">
-            <thead><tr><th>النمط</th><th>عُرض</th><th>اخترته</th><th>👍</th><th>👎</th></tr></thead>
-            <tbody>
-              {IMAGE_STYLES.map((s) => {
-                const st = styleStats.find((x) => x.styleKey === s.key);
-                return <tr key={s.key}><td>{s.label}</td><td>{st?.shown ?? 0}</td><td>{st?.selected ?? 0}</td><td>{st?.liked ?? 0}</td><td>{st?.disliked ?? 0}</td></tr>;
-              })}
-            </tbody>
-          </table>
-        </div>
+          <div className="stack" style={{ gap: 10 }}>
+            {IMAGE_STYLES.map((s) => {
+              const st = styleStats.find((x) => x.styleKey === s.key);
+              return (
+                <div key={s.key}>
+                  <div className="row between subtle" style={{ marginBottom: 4 }}>
+                    <span>{s.label}</span>
+                    <span>عُرض {st?.shown ?? 0} · اخترته {st?.selected ?? 0} · 👍 {st?.liked ?? 0}</span>
+                  </div>
+                  <div className="bar"><span style={{ width: `${((st?.selected ?? 0) / maxShown) * 100}%` }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
 
-        {history.length > 1 && (
-          <div className="section-panel cyan-panel fade-in-up">
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--cyan)', marginBottom: 10 }}>🕰 الإصدارات السابقة</div>
+      {history.length > 1 && (
+        <section className="card fade-up">
+          <SectionTitle icon="history" tone="info">الإصدارات السابقة</SectionTitle>
+          <div className="timeline">
             {history.slice(1).map((h) => (
-              <div key={h.id} className="note" style={{ marginBottom: 6 }}>v{h.version} · {formatDate(h.createdAt)} · {h.data.summary.slice(0, 90)}…</div>
+              <div key={h.id} className="timeline-item"><b>v{h.version}</b> · {formatDate(h.createdAt)} · {h.data.summary.slice(0, 100)}…</div>
             ))}
           </div>
-        )}
-      </div>
+        </section>
+      )}
     </div>
   );
 }
