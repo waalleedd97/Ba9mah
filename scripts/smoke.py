@@ -97,6 +97,8 @@ s,b,_=req('PATCH',f'/api/rules/{rid2}',{'active':False}); check('deactivate rule
 s,b,_=req('DELETE',f'/api/rules/{rid2}'); check('delete rule', s==200)
 s,b,_=req('POST','/api/posts',{'content':'بوست مرجعي طويل بما يكفي للاختبار هنا','topic':'مرجع'}); check('add reference post', s==201 and b['post']['kind']=='reference')
 s,b,_=req('DELETE',f"/api/posts/{b['post']['id']}"); check('delete reference post', s==200)
+s,b,_=req('POST','/api/posts/bulk',{'posts':['نص أول من كتابتي طويل بما يكفي ليُقبل في الاستيراد','نص ثانٍ من كتابتي طويل بما يكفي ليُقبل في الاستيراد','نص أول من كتابتي طويل بما يكفي ليُقبل في الاستيراد'],'own':True}); check('bulk import dedupes', s==200 and b['added']==2 and b['skipped']==1 and b['relearning']==True, b)
+s,b,_=req('GET','/api/posts?rating=liked&limit=500'); check('bulk posts are own+liked', s==200 and sum(1 for p in b['posts'] if p['kind']=='own')>=3, len(b['posts']))
 
 print('== studio / import / pages ==')
 s,b,_=req('POST','/api/studio',{'prompt':'قطة كرتونية'}); check('studio create', s==201 and b['image']['source']=='studio'); stid=b['image']['id']

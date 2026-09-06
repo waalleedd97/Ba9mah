@@ -6,7 +6,7 @@ import { relearnProfile } from '@/lib/ai/learn';
 
 const Body = z.object({
   spec: z.string().trim().min(2).max(120),
-  samples: z.array(z.string().max(6000)).max(5).default([]),
+  samples: z.array(z.string().max(8000)).max(500).default([]),
   voice: z.array(z.string().max(30)).max(4).default([]),
   language: z.string().max(30).nullable().optional(),
   avoid: z.array(z.string().max(30)).max(12).default([]),
