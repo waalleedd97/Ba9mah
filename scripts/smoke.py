@@ -40,10 +40,10 @@ s,b,h=req('GET','/',follow=False); check('/ redirects to /onboarding', s in (302
 s,b,_=req('POST','/api/rounds',{}); check('rounds before onboarding 409', s==409, b)
 
 print('== onboarding ==')
-s,b,_=req('POST','/api/onboarding',{'spec':'الموارد البشرية','choices':['a','b','a','a','a']}); check('onboarding', s==200, b)
-s,b,_=req('POST','/api/onboarding',{'spec':'x y','choices':['a','b','a','a','a']}); check('onboarding twice 409', s==409)
+s,b,_=req('POST','/api/onboarding',{'spec':'الموارد البشرية','samples':['هذا نص كتبته بنفسي عن التوظيف الذكي وكيف نختار الشخص المناسب بدل السيرة اللامعة.'],'voice':['direct','story','practical'],'language':'saudi','avoid':['preachy','emoji']}); check('onboarding', s==200 and b.get('samples')==1 and b.get('profile')==True, b)
+s,b,_=req('POST','/api/onboarding',{'spec':'x y','samples':[],'voice':[],'avoid':[]}); check('onboarding twice 409', s==409)
 s,b,_=req('GET','/',raw=True); check('dashboard html 200', s==200 and 'بصمة'.encode() in b)
-s,b,_=req('GET','/api/state'); check('state', s==200 and b['stats']['liked']==5 and b['stats']['goldenRules']==5, b['stats'])
+s,b,_=req('GET','/api/state'); check('state', s==200 and b['stats']['liked']==1 and b['stats']['goldenRules']==4 and b['stats']['avoidRules']==2 and b['stats']['profileVersion']==1, b['stats'])
 
 print('== round ==')
 s,b,_=req('POST','/api/rounds',{'topic':'التوظيف الذكي'}); check('generate round', s==200 and len(b['posts'])==4, {k:b['round'][k] for k in ('id','exploratory','topic')} if s==200 else b)
@@ -52,7 +52,7 @@ check('labor-law verify applied (HR spec, mock passthrough)', all(p['verified'] 
 s,b,_=req('GET',f'/api/rounds/{rid}'); check('get round', s==200 and len(b['posts'])==4)
 s,b,_=req('GET',f'/round/{rid}',raw=True); check('round page html', s==200 and 'ما عجبني'.encode() in b)
 p0,p1,p2,p3=[p['id'] for p in posts]
-s,b,_=req('POST',f'/api/posts/{p0}/rate',{'liked':False}); check('rate dislike', s==200 and b['post']['rating']=='disliked' and b['roundDone']==False)
+s,b,_=req('POST',f'/api/posts/{p0}/rate',{'liked':False,'reason':'رسمي زيادة'}); check('rate dislike with reason', s==200 and b['post']['rating']=='disliked' and b['roundDone']==False)
 s,b,_=req('PATCH',f'/api/posts/{p1}',{'content':'نص معدّل يدوياً للاختبار من المستخدم'}); check('manual edit keeps original', s==200 and b['post']['originalContent'] and b['post']['content'].startswith('نص معدّل'))
 s,b,_=req('POST',f'/api/posts/{p1}/edit',{'instruction':'خله أقصر'}); check('ai edit', s==200 and b['post']['content'].startswith('[معدّل]'), b.get('summary'))
 
@@ -83,11 +83,12 @@ for pid in (p1,p2,p3):
 check('round done', b['roundDone']==True)
 import time; time.sleep(2)  # after() hooks: analyze + relearn (mock)
 s,b,_=req('GET','/api/rules?kind=avoid'); check('learned avoid rule from dislike', any(r['source']=='learned' for r in b['rules']), [r['text'] for r in b['rules']])
+s,b,_=req('GET','/api/posts?rating=liked'); check('own sample stored as own', any(p['kind']=='own' for p in b['posts']))
 s,b,_=req('GET','/api/rules?kind=image_style'); check('learned image style rule from like', any(r['source']=='learned' for r in b['rules']), [r['text'] for r in b['rules']])
 s,b,_=req('GET','/api/rules?kind=image_avoid'); check('learned image avoid rule from dislike', any(r['source']=='learned' for r in b['rules']))
-s,b,_=req('GET','/api/profile'); check('profile auto-learned v1', s==200 and b['profile'] and b['profile']['version']==1, (b['profile'] or {}).get('data',{}).get('confidence'))
-s,b,_=req('POST','/api/profile'); check('manual relearn v2', s==200 and b['profile']['version']==2)
-s,b,_=req('GET','/api/state'); check('state after round', b['stats']['liked']==8 and b['stats']['disliked']==1 and b['stats']['rounds']==1 and b['stats']['profileVersion']==2, b['stats'])
+s,b,_=req('GET','/api/profile'); check('profile relearned after round', s==200 and b['profile'] and b['profile']['version']>=2, (b['profile'] or {}).get('version'))
+s,b,_=req('POST','/api/profile'); check('manual relearn bumps version', s==200 and b['profile']['version']>=3)
+s,b,_=req('GET','/api/state'); check('state after round', b['stats']['liked']==4 and b['stats']['disliked']==1 and b['stats']['rounds']==1 and b['stats']['profileVersion']>=3, b['stats'])
 
 print('== rules / posts crud ==')
 s,b,_=req('POST','/api/rules',{'kind':'golden','text':'قاعدة اختبار'}); check('add rule', s==201); rid2=b['rule']['id']
@@ -101,7 +102,7 @@ print('== studio / import / pages ==')
 s,b,_=req('POST','/api/studio',{'prompt':'قطة كرتونية'}); check('studio create', s==201 and b['image']['source']=='studio'); stid=b['image']['id']
 s,b,_=req('POST','/api/studio',{'prompt':'عدّل','image':'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='}); check('studio edit with upload', s==201)
 s,b,_=req('DELETE',f'/api/images/{stid}'); check('delete studio image', s==200)
-s,b,_=req('GET','/api/posts?rating=liked'); seed=[p for p in b['posts'] if p['kind']=='seed'][0]
+s,b,_=req('GET','/api/posts?rating=liked'); seed=[p for p in b['posts'] if p['kind']=='own'][0]
 legacy={'spec':'x','goldenRules':['قاعدة مستوردة'],'dislikeReasons':['سبب مستورد'],'likedPosts':[{'id':'seed-0','content':seed['content'],'topic':'x'},{'id':'1','content':'بوست قديم معجب به من النسخة السابقة','topic':'قديم'}],'dislikedPosts':[{'id':'2','content':'بوست قديم مرفوض','topic':'قديم'}],'imageStyleRules':['ألوان دافئة'],'savedPosts':[{'id':'3','content':'محفوظ قديم','topic':'قديم','image':'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','savedAt':1700000000000}]}
 s,b,_=req('POST','/api/import',legacy); check('import legacy', s==200 and b['report']['liked']==1 and b['report']['skipped']==1 and b['report']['saved']==1 and b['report']['images']==1 and b['report']['rules']==3, b.get('report'))
 for path,marker in [('/train','تدريب'),('/studio','استوديو'),('/saved','المحفوظات'),('/profile','ملف الأسلوب'),('/settings','الإعدادات')]:

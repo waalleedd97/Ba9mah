@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { AppStats, ImageRecord, PostWithImages, Round } from '@/lib/types';
 import { api, errorMessage } from '@/lib/client/api';
+import { DISLIKE_REASONS } from '@/lib/seed';
 import { ImageGrid } from './ImageGrid';
 import { Button, GenerationLoader, IconButton, Pill, PostPreview, Stat, Stepper, useToast } from './ui';
 import { Icon } from './icons';
@@ -30,6 +31,7 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
   const [imgOpen, setImgOpen] = useState(() => Boolean(initialPosts[firstUnrated === -1 ? 0 : firstUnrated]?.selectedImageId || initialPosts[firstUnrated === -1 ? 0 : firstUnrated]?.images.length));
   const [saveBusy, setSaveBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [askReason, setAskReason] = useState(false);
 
   const cur = posts[idx];
   const newLikes = posts.filter((p, i) => p.rating === 'liked' && initialPosts[i]?.rating !== 'liked').length;
@@ -44,6 +46,7 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
   function goTo(i: number) {
     if (i < 0 || i >= posts.length) return;
     setIdx(i);
+    setAskReason(false);
     setManual(null);
     setAiOpen(false);
     setAiText('');
@@ -51,13 +54,14 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function rate(likedIt: boolean) {
+  async function rate(likedIt: boolean, reason?: string) {
     if (!cur) return;
+    setAskReason(false);
     try {
-      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}/rate`, { method: 'POST', json: { liked: likedIt } });
+      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}/rate`, { method: 'POST', json: { liked: likedIt, reason } });
       const updated = posts.map((p) => (p.id === cur.id ? { ...p, rating: post.rating, ratedAt: post.ratedAt } : p));
       setPosts(updated);
-      toast.success(likedIt ? 'أعجبك — بصمة يتعلم من هذا الأسلوب' : 'رفضته — يحلل السبب في الخلفية');
+      toast.success(likedIt ? 'أعجبك — بصمة يتعلم من هذا الأسلوب' : reason ? `رفضته: ${reason} — سيتجنبه` : 'رفضته — يحلل السبب في الخلفية');
       const nextUnrated = updated.findIndex((p, i) => p.rating === null && i !== idx);
       setLeaving(likedIt ? 'right' : 'left');
       setTimeout(() => {
@@ -261,14 +265,30 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
         )}
       </div>
 
-      <div className="rate-bar mt-3">
-        <button className={`rate-btn dislike ${cur.rating === 'disliked' ? 'chosen' : ''}`} onClick={() => rate(false)}>
-          <Icon name="thumbs-down" size={20} /> ما عجبني
-        </button>
-        <button className={`rate-btn like ${cur.rating === 'liked' ? 'chosen' : ''}`} onClick={() => rate(true)}>
-          <Icon name="thumbs-up" size={20} /> عجبني
-        </button>
-      </div>
+      {askReason ? (
+        <div className="rate-bar mt-3 fade-in" style={{ display: 'block' }}>
+          <div className="row between mb-1">
+            <b style={{ fontSize: 14 }}>وش اللي ما عجبك؟</b>
+            <button className="btn btn-ghost btn-sm" onClick={() => rate(false)}>تخطي</button>
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            {DISLIKE_REASONS.map((r) => (
+              <button key={r} type="button" className="chip" onClick={() => rate(false, r)}>
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="rate-bar mt-3">
+          <button className={`rate-btn dislike ${cur.rating === 'disliked' ? 'chosen' : ''}`} onClick={() => setAskReason(true)}>
+            <Icon name="thumbs-down" size={20} /> ما عجبني
+          </button>
+          <button className={`rate-btn like ${cur.rating === 'liked' ? 'chosen' : ''}`} onClick={() => rate(true)}>
+            <Icon name="thumbs-up" size={20} /> عجبني
+          </button>
+        </div>
+      )}
       <p className="subtle text-center mt-2">كل تقييم يُحلَّل في الخلفية، وكل 3 تقييمات يتحدث ملف أسلوبك</p>
     </div>
   );

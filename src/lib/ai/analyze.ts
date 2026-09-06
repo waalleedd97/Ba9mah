@@ -11,7 +11,7 @@ const MAX_LEARNED_AVOID = 15;
 const MAX_LEARNED_IMAGE = 12;
 
 /** بعد رفض بوست: تشخيص السبب وتحويله لقاعدة تجنب (يُستدعى بعد إرسال الرد) */
-export async function analyzeDislikedPost(postId: string): Promise<void> {
+export async function analyzeDislikedPost(postId: string, userReason?: string): Promise<void> {
   const post = getPost(postId);
   if (!post) return;
   try {
@@ -20,12 +20,12 @@ export async function analyzeDislikedPost(postId: string): Promise<void> {
       kind: 'analyze_dislike',
       schema: DislikeAnalysisSchema,
       system: [systemText(DISLIKE_SYSTEM)],
-      user: buildDislikeUser(post, profile?.data.summary ?? null, ruleTexts('avoid')),
+      user: buildDislikeUser(post, profile?.data.summary ?? null, ruleTexts('avoid'), userReason),
       effort: 'medium',
       maxTokens: 2000,
     });
-    addDislikeReason(post.id, data.reason, data.category);
-    if (data.confidence !== 'low' && data.avoid_rule.trim()) {
+    if (!userReason) addDislikeReason(post.id, data.reason, data.category);
+    if ((userReason || data.confidence !== 'low') && data.avoid_rule.trim()) {
       addRule('avoid', data.avoid_rule, 'learned');
       capLearnedRules('avoid', MAX_LEARNED_AVOID);
     }

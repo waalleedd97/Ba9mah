@@ -7,7 +7,7 @@ import { Button, EmptyState, IconButton, Switch, useToast } from './ui';
 import { Icon, type IconName } from './icons';
 
 const SOURCE_LABEL: Record<Rule['source'], string> = { onboarding: 'إعداد أولي', manual: 'يدوي', learned: 'متعلَّم', imported: 'مستورد' };
-const KIND_LABEL: Record<Post['kind'], string> = { seed: 'مثال أولي', reference: 'مرجع', generated: 'مولّد', imported: 'مستورد' };
+const KIND_LABEL: Record<Post['kind'], string> = { seed: 'مثال أولي', reference: 'مرجع', generated: 'مولّد', imported: 'مستورد', own: 'كتبته بنفسي' };
 
 type Tab = 'refs' | 'golden' | 'avoid' | 'images';
 const TABS: Array<{ key: Tab; label: string; icon: IconName }> = [
@@ -50,9 +50,9 @@ export function TrainPanel({ rules: initialRules, liked: initialLiked }: { rules
       toast.error('تعذر الحذف', errorMessage(e));
     }
   }
-  async function addReference(content: string, topic: string) {
+  async function addReference(content: string, topic: string, own: boolean) {
     try {
-      const { post } = await api<{ post: Post }>('/api/posts', { method: 'POST', json: { content, topic: topic || undefined } });
+      const { post } = await api<{ post: Post }>('/api/posts', { method: 'POST', json: { content, topic: topic || undefined, own } });
       setLiked((prev) => [post, ...prev]);
       toast.success('أُضيف كمرجع', 'بصمة سيقلّد أسلوبه ويتعلم منه');
       return true;
@@ -180,19 +180,20 @@ function RuleSection({ icon, tone, title, subtitle, placeholder, rules, onAdd, o
 
 function ReferenceSection({ posts, onAdd, onPatch, onRemove }: {
   posts: Post[];
-  onAdd: (content: string, topic: string) => Promise<boolean>;
+  onAdd: (content: string, topic: string, own: boolean) => Promise<boolean>;
   onPatch: (id: string, patch: { content?: string; topic?: string }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
   const [content, setContent] = useState('');
   const [topic, setTopic] = useState('');
+  const [own, setOwn] = useState(true);
   const [editing, setEditing] = useState<{ id: string; content: string; topic: string } | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
   async function add() {
     if (content.trim().length < 10 || busy) return;
     setBusy(true);
-    if (await onAdd(content.trim(), topic.trim())) {
+    if (await onAdd(content.trim(), topic.trim(), own)) {
       setContent('');
       setTopic('');
     }
@@ -214,7 +215,11 @@ function ReferenceSection({ posts, onAdd, onPatch, onRemove }: {
         <div className="stack" style={{ gap: 8 }}>
           <input className="input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="الموضوع (اختياري)" maxLength={120} />
           <textarea className="textarea" value={content} onChange={(e) => setContent(e.target.value)} placeholder="الصق نص البوست هنا..." />
-          <div className="row end">
+          <div className="row between">
+            <label className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 13.5 }}>
+              <Switch on={own} onChange={setOwn} label="كتبته بنفسي" />
+              {own ? 'كتبته بنفسي (أقوى إشارة لصوتي)' : 'بوست لغيري أحب أسلوبه'}
+            </label>
             <Button variant="primary" onClick={add} disabled={content.trim().length < 10} loading={busy} icon="plus">أضف كمرجع</Button>
           </div>
         </div>

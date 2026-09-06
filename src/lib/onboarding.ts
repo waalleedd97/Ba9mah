@@ -1,21 +1,35 @@
 import 'server-only';
 import { getDb } from '@/lib/db';
 import { addRule, insertPost, postExists, setSetting } from '@/lib/db/repo';
-import { ONBOARD_QUESTIONS, SEED_POSTS } from '@/lib/seed';
+import { AVOID_OPTIONS, LANGUAGE_OPTIONS, SEED_POSTS, VOICE_TRAITS, chipRules } from '@/lib/seed';
 
-/** يحفظ التخصص، يحوّل إجابات A/B إلى قواعد ذهبية، ويزرع أمثلة البذرة */
-export function completeOnboarding(spec: string, choices: Array<'a' | 'b' | 'skip'>) {
+export interface OnboardingInput {
+  spec: string;
+  /** نصوص كتبها المستخدم بنفسه أو يحب أسلوبها */
+  samples: string[];
+  voice: string[];
+  language?: string | null;
+  avoid: string[];
+}
+
+/** يحفظ التخصص، يحوّل الاختيارات إلى قواعد، ويخزن نصوص المستخدم كبصمة أولى */
+export function completeOnboarding(input: OnboardingInput): { samples: number } {
   const db = getDb();
+  const samples = input.samples.map((s) => s.trim()).filter((s) => s.length >= 20);
   db.transaction(() => {
-    setSetting('spec', spec.trim());
-    choices.forEach((choice, i) => {
-      const q = ONBOARD_QUESTIONS[i];
-      if (!q || choice === 'skip') return;
-      addRule('golden', (choice === 'a' ? q.a : q.b).rule, 'onboarding');
+    setSetting('spec', input.spec.trim());
+    for (const r of chipRules(VOICE_TRAITS, input.voice)) addRule('golden', r, 'onboarding');
+    if (input.language) for (const r of chipRules(LANGUAGE_OPTIONS, [input.language])) addRule('golden', r, 'onboarding');
+    for (const r of chipRules(AVOID_OPTIONS, input.avoid)) addRule('avoid', r, 'onboarding');
+    const ts = Date.now();
+    samples.forEach((content, i) => {
+      insertPost({ kind: 'own', content, topic: content.split('\n')[0].slice(0, 60), rating: 'liked', ratedAt: ts + i, createdAt: ts + i });
     });
-    seedPosts();
+    // أمثلة البذرة فقط عندما لا توجد نصوص من المستخدم
+    if (samples.length === 0) seedPosts();
     setSetting('onboarded_at', String(Date.now()));
   })();
+  return { samples: samples.length };
 }
 
 export function seedPosts() {
