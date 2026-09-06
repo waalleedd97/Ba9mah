@@ -50,7 +50,7 @@ s,b,_=req('POST','/api/rounds',{'topic':'التوظيف الذكي'}); check('ge
 rid=b['round']['id']; posts=b['posts']
 check('labor-law verify applied (HR spec, mock passthrough)', all(p['verified'] for p in posts), [p['verified'] for p in posts])
 s,b,_=req('GET',f'/api/rounds/{rid}'); check('get round', s==200 and len(b['posts'])==4)
-s,b,_=req('GET',f'/round/{rid}',raw=True); check('round page html', s==200 and 'قيّم البوستات'.encode() in b)
+s,b,_=req('GET',f'/round/{rid}',raw=True); check('round page html', s==200 and 'ما عجبني'.encode() in b)
 p0,p1,p2,p3=[p['id'] for p in posts]
 s,b,_=req('POST',f'/api/posts/{p0}/rate',{'liked':False}); check('rate dislike', s==200 and b['post']['rating']=='disliked' and b['roundDone']==False)
 s,b,_=req('PATCH',f'/api/posts/{p1}',{'content':'نص معدّل يدوياً للاختبار من المستخدم'}); check('manual edit keeps original', s==200 and b['post']['originalContent'] and b['post']['content'].startswith('نص معدّل'))
