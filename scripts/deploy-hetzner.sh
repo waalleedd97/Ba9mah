@@ -6,7 +6,7 @@
 #    curl -fsSL https://raw.githubusercontent.com/waalleedd97/Ba9mah/main/scripts/deploy-hetzner.sh -o deploy.sh
 #    sudo bash deploy.sh --password 'كلمة-مرور-قوية' \
 #         --anthropic-key sk-ant-... --gemini-key AIza... \
-#         [--domain basma.example.com] [--branch main] [--dir /opt/basma]
+#         [--domain basma.example.com | --no-domain] [--branch main] [--dir /opt/basma]
 #
 #  التحديث لاحقاً: sudo bash /opt/basma/scripts/deploy-hetzner.sh
 #  (بدون معاملات: يسحب آخر إصدار ويعيد البناء ويحافظ على .env والبيانات)
@@ -17,6 +17,7 @@ REPO_URL="https://github.com/waalleedd97/Ba9mah.git"
 APP_DIR="/opt/basma"
 BRANCH="main"
 DOMAIN=""
+NO_DOMAIN=0
 PASSWORD=""
 ANTHROPIC_KEY=""
 GEMINI_KEY=""
@@ -30,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --anthropic-key) ANTHROPIC_KEY="$2"; shift 2 ;;
     --gemini-key) GEMINI_KEY="$2"; shift 2 ;;
     --domain) DOMAIN="$2"; shift 2 ;;
+    --no-domain) NO_DOMAIN=1; shift ;;
     --branch) BRANCH="$2"; shift 2 ;;
     --dir) APP_DIR="$2"; shift 2 ;;
     --image-model) IMAGE_MODEL="$2"; shift 2 ;;
@@ -42,6 +44,13 @@ log() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mخطأ: %s\033[0m\n' "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "شغّل السكربت بـ sudo أو كـ root"
+
+# قيم نموذجية منسوخة من التعليمات كما هي؟
+is_placeholder() { [[ -z "$1" || "$1" == *"..."* || "$1" == *xxxxx* || "$1" == "كلمة-مرور-قوية" || "$1" == "change-me-now" || "$1" == *example.com* ]]; }
+[[ -n "$PASSWORD" ]] && is_placeholder "$PASSWORD" && die "بدّل 'كلمة-مرور-قوية' بكلمة مرور حقيقية"
+[[ -n "$ANTHROPIC_KEY" ]] && { is_placeholder "$ANTHROPIC_KEY" || [[ "$ANTHROPIC_KEY" != sk-ant-* ]]; } && die "مفتاح Anthropic غير صالح: يجب أن يبدأ بـ sk-ant- ويكون كاملاً"
+[[ -n "$GEMINI_KEY" ]] && { is_placeholder "$GEMINI_KEY" || [[ ${#GEMINI_KEY} -lt 30 ]]; } && die "مفتاح Gemini غير صالح: انسخه كاملاً من aistudio.google.com/apikey"
+[[ -n "$DOMAIN" ]] && { is_placeholder "$DOMAIN" || [[ "$DOMAIN" != *.* ]]; } && die "الدومين غير صالح: استخدم دومينك الحقيقي الموجّه إلى هذا السيرفر، أو --no-domain"
 
 # ---------- 1) Docker ----------
 if ! command -v docker >/dev/null 2>&1; then
@@ -82,6 +91,11 @@ get_env() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true; }
 [[ -n "$GEMINI_KEY" ]] && set_env GEMINI_API_KEY "$GEMINI_KEY"
 [[ -n "$IMAGE_MODEL" ]] && set_env GEMINI_IMAGE_MODEL "$IMAGE_MODEL"
 [[ -n "$DOMAIN" ]] && set_env BASMA_DOMAIN "$DOMAIN"
+if [[ $NO_DOMAIN -eq 1 ]]; then
+  sed -i '/^BASMA_DOMAIN=/d' .env
+  docker rm -f basma-caddy >/dev/null 2>&1 || true
+  log "أُزيل الدومين وأُوقف Caddy؛ التطبيق على 127.0.0.1:3000 فقط"
+fi
 set_env DATA_DIR /data
 
 secret="$(get_env AUTH_SECRET)"
@@ -89,9 +103,10 @@ if [[ -z "$secret" || "$secret" == replace-with-* || ${#secret} -lt 32 ]]; then
   set_env AUTH_SECRET "$(openssl rand -hex 32)"
   log "وُلّد AUTH_SECRET جديد"
 fi
-[[ "$(get_env APP_PASSWORD)" != "change-me-now" && -n "$(get_env APP_PASSWORD)" ]] || die "اضبط كلمة المرور: --password '...'"
-[[ "$(get_env ANTHROPIC_API_KEY)" != "sk-ant-xxxxx" && -n "$(get_env ANTHROPIC_API_KEY)" ]] || die "اضبط مفتاح Anthropic: --anthropic-key ..."
-[[ "$(get_env GEMINI_API_KEY)" != "AIzaSyxxxxx" && -n "$(get_env GEMINI_API_KEY)" ]] || die "اضبط مفتاح Gemini: --gemini-key ..."
+is_placeholder "$(get_env APP_PASSWORD)" && die "كلمة المرور في .env قيمة نموذجية. شغّل مع: --password 'كلمتك'"
+{ is_placeholder "$(get_env ANTHROPIC_API_KEY)" || [[ "$(get_env ANTHROPIC_API_KEY)" != sk-ant-* ]]; } && die "مفتاح Anthropic في .env غير صالح. شغّل مع: --anthropic-key sk-ant-..."
+g="$(get_env GEMINI_API_KEY)"; { is_placeholder "$g" || [[ ${#g} -lt 30 ]]; } && die "مفتاح Gemini في .env غير صالح. شغّل مع: --gemini-key ..."
+d="$(get_env BASMA_DOMAIN)"; [[ -n "$d" ]] && is_placeholder "$d" && die "الدومين في .env قيمة نموذجية. شغّل مع --domain دومينك أو --no-domain"
 chmod 600 .env
 
 # ---------- 4) الجدار الناري (إن وُجد ufw) ----------
