@@ -50,7 +50,7 @@ s,b,_=req('POST','/api/rounds',{'topic':'التوظيف الذكي'}); check('ge
 rid=b['round']['id']; posts=b['posts']
 check('labor-law verify applied (HR spec, mock passthrough)', all(p['verified'] for p in posts), [p['verified'] for p in posts])
 s,b,_=req('GET',f'/api/rounds/{rid}'); check('get round', s==200 and len(b['posts'])==4)
-s,b,_=req('GET',f'/round/{rid}',raw=True); check('round page html', s==200 and 'قيّم البوست'.encode() in b)
+s,b,_=req('GET',f'/round/{rid}',raw=True); check('round page html', s==200 and 'قيّم البوستات'.encode() in b)
 p0,p1,p2,p3=[p['id'] for p in posts]
 s,b,_=req('POST',f'/api/posts/{p0}/rate',{'liked':False}); check('rate dislike', s==200 and b['post']['rating']=='disliked' and b['roundDone']==False)
 s,b,_=req('PATCH',f'/api/posts/{p1}',{'content':'نص معدّل يدوياً للاختبار من المستخدم'}); check('manual edit keeps original', s==200 and b['post']['originalContent'] and b['post']['content'].startswith('نص معدّل'))
@@ -104,7 +104,7 @@ s,b,_=req('DELETE',f'/api/images/{stid}'); check('delete studio image', s==200)
 s,b,_=req('GET','/api/posts?rating=liked'); seed=[p for p in b['posts'] if p['kind']=='seed'][0]
 legacy={'spec':'x','goldenRules':['قاعدة مستوردة'],'dislikeReasons':['سبب مستورد'],'likedPosts':[{'id':'seed-0','content':seed['content'],'topic':'x'},{'id':'1','content':'بوست قديم معجب به من النسخة السابقة','topic':'قديم'}],'dislikedPosts':[{'id':'2','content':'بوست قديم مرفوض','topic':'قديم'}],'imageStyleRules':['ألوان دافئة'],'savedPosts':[{'id':'3','content':'محفوظ قديم','topic':'قديم','image':'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==','savedAt':1700000000000}]}
 s,b,_=req('POST','/api/import',legacy); check('import legacy', s==200 and b['report']['liked']==1 and b['report']['skipped']==1 and b['report']['saved']==1 and b['report']['images']==1 and b['report']['rules']==3, b.get('report'))
-for path,marker in [('/train','تدريب'),('/studio','استوديو'),('/saved','المحفوظة'),('/profile','ملف أسلوبك'),('/settings','الإعدادات')]:
+for path,marker in [('/train','تدريب'),('/studio','استوديو'),('/saved','المحفوظات'),('/profile','ملف الأسلوب'),('/settings','الإعدادات')]:
     s,raw,_=req('GET',path,raw=True); check(f'page {path}', s==200 and marker.encode() in raw)
 s,raw,_=req('GET','/round/999',raw=True); check('missing round 404', s==404)
 s,b,_=req('POST','/api/auth/logout'); check('logout', s==200)
