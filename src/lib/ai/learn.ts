@@ -34,13 +34,14 @@ export function relearnIsDue(): boolean {
 }
 
 /** استخلاص ملف أسلوب جديد من كل البيانات (يُنفَّذ مرة واحدة في كل لحظة) */
-export async function relearnProfile(trigger: 'auto' | 'manual'): Promise<StyleProfile | null> {
+export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?: boolean }): Promise<StyleProfile | null> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
       const spec = getSpec();
       const liked = listPostsByRating('liked', 40);
-      if (!spec || liked.length < MIN_LIKED_FOR_PROFILE) return null;
+      const minLiked = opts?.force ? 1 : MIN_LIKED_FOR_PROFILE;
+      if (!spec || liked.length < minLiked) return null;
       const disliked = listDislikedWithReasons(20);
       const previous = latestProfile();
       setSetting('learning_started_at', String(Date.now()));

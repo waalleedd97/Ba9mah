@@ -1,7 +1,7 @@
 /** أنواع مشتركة بين السيرفر والواجهة — لا تستورد أي وحدة Node هنا */
 
 export type Rating = 'liked' | 'disliked';
-export type PostKind = 'generated' | 'seed' | 'reference' | 'imported';
+export type PostKind = 'generated' | 'seed' | 'reference' | 'imported' | 'own';
 export type RuleKind = 'golden' | 'avoid' | 'image_style' | 'image_avoid';
 export type RuleSource = 'onboarding' | 'manual' | 'learned' | 'imported';
 export type ImageSource = 'post' | 'saved' | 'studio';
@@ -127,18 +127,6 @@ export interface AppStats {
   profileConfidence: StyleProfileData['confidence'] | null;
   exploratoryNext: number;
   ratingsSinceProfile: number;
-}
-
-export interface OnboardOption {
-  label: string;
-  text: string;
-  rule: string;
-}
-
-export interface OnboardQuestion {
-  q: string;
-  a: OnboardOption;
-  b: OnboardOption;
 }
 
 export interface PostWithImages extends Post {

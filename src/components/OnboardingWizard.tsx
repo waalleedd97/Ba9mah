@@ -2,59 +2,73 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { OnboardQuestion, Round } from '@/lib/types';
-import type { FieldOption } from '@/lib/seed';
+import type { Round } from '@/lib/types';
+import type { ChipOption, FieldOption } from '@/lib/seed';
 import { api, errorMessage } from '@/lib/client/api';
-import { Button, GenerationLoader, Pill, PostPreview, Stepper, useToast } from './ui';
+import { Button, GenerationLoader, Pill } from './ui';
 import { Icon } from './icons';
 
-type Step = 'welcome' | 'field' | 'style' | 'ready' | 'generating' | 'error';
-type Choice = 'a' | 'b' | 'skip';
+type Step = 'welcome' | 'field' | 'samples' | 'voice' | 'ready' | 'generating' | 'error';
 
 interface Props {
-  questions: OnboardQuestion[];
   fields: FieldOption[];
+  voices: ChipOption[];
+  languages: ChipOption[];
+  avoids: ChipOption[];
   defaultSpec: string;
 }
 
-export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
+const STEPS: Step[] = ['field', 'samples', 'voice'];
+
+function StepHeader({ title, sub, stepIndex }: { title: string; sub: string; stepIndex: number }) {
+  return (
+    <div className="mb-3">
+      <div className="eyebrow mb-1">الخطوة {stepIndex + 1} من {STEPS.length}</div>
+      <h2 style={{ fontSize: 28, marginBottom: 6 }}>{title}</h2>
+      <p className="muted">{sub}</p>
+      <div className="stepper mt-2" style={{ maxWidth: 240 }}>
+        {STEPS.map((s, i) => (
+          <span key={s} className={i < stepIndex ? 'done' : i === stepIndex ? 'active' : ''} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function OnboardingWizard({ fields, voices, languages, avoids, defaultSpec }: Props) {
   const router = useRouter();
-  const toast = useToast();
   const [step, setStep] = useState<Step>('welcome');
   const [selected, setSelected] = useState<string[]>([]);
   const [custom, setCustom] = useState('');
   const [showCustom, setShowCustom] = useState(false);
-  const [qIdx, setQIdx] = useState(0);
-  const [choices, setChoices] = useState<Choice[]>([]);
+  const [samples, setSamples] = useState<string[]>(['']);
+  const [voice, setVoice] = useState<string[]>([]);
+  const [language, setLanguage] = useState<string | null>('saudi');
+  const [avoid, setAvoid] = useState<string[]>([]);
   const [err, setErr] = useState('');
   const [saved, setSaved] = useState(false);
+  const [genTitle, setGenTitle] = useState('');
 
   const spec = [...fields.filter((f) => selected.includes(f.key)).map((f) => f.label), custom.trim()].filter(Boolean).join('، ') || defaultSpec;
-  const chosenRules = choices.map((c, i) => (c === 'skip' ? null : c === 'a' ? questions[i].a.rule : questions[i].b.rule)).filter(Boolean) as string[];
+  const validSamples = samples.map((s) => s.trim()).filter((s) => s.length >= 20);
+  const stepIndex = STEPS.indexOf(step);
 
-  function toggleField(key: string) {
-    setSelected((s) => (s.includes(key) ? s.filter((k) => k !== key) : s.length >= 2 ? [s[1], key] : [...s, key]));
-  }
-
-  function answer(c: Choice) {
-    const all = [...choices, c];
-    setChoices(all);
-    if (qIdx < questions.length - 1) setTimeout(() => setQIdx((i) => i + 1), 180);
-    else setStep('ready');
-  }
+  const toggle = (list: string[], key: string, max: number) => (list.includes(key) ? list.filter((k) => k !== key) : list.length >= max ? [...list.slice(1), key] : [...list, key]);
 
   async function start() {
     setStep('generating');
     setErr('');
     try {
       if (!saved) {
+        setGenTitle(validSamples.length ? 'يستخلص بصمتك من نصوصك' : 'يحفظ اختياراتك');
         try {
-          await api('/api/onboarding', { method: 'POST', json: { spec, choices } });
+          await api('/api/onboarding', { method: 'POST', json: { spec, samples: validSamples, voice, language, avoid } });
         } catch (e) {
           if (!(e instanceof Error && /مسبقاً/.test(e.message))) throw e;
         }
         setSaved(true);
       }
+      setGenTitle('يكتب أول 4 بوستات بصوتك');
       const { round } = await api<{ round: Round }>('/api/rounds', { method: 'POST', json: {} });
       router.push(`/round/${round.id}`);
     } catch (e) {
@@ -63,7 +77,7 @@ export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
     }
   }
 
-  if (step === 'generating') return <GenerationLoader title="يكتب أول 4 بوستات بأسلوبك" subtitle={`التخصص: ${spec}`} />;
+  if (step === 'generating') return <GenerationLoader title={genTitle || 'يجهّز بصمتك'} subtitle={`التخصص: ${spec}`} />;
 
   if (step === 'error') {
     return (
@@ -88,30 +102,30 @@ export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
             <Icon name="fingerprint" size={38} />
           </div>
           <h1 className="hero-title" style={{ marginBottom: 14 }}>
-            بصمة يكتب LinkedIn <span className="grad-text">بأسلوبك أنت</span>
+            بصمة يكتب LinkedIn <span className="grad-text">بصوتك أنت</span>
           </h1>
           <p className="hero-sub" style={{ margin: '0 auto 28px' }}>
-            قيّم البوستات بإعجاب أو رفض، وبصمة يستخلص أسلوبك ويكتب أقرب لذوقك في كل جولة. بدون كتابة، اختيارات فقط.
+            يتعلم من نصوصك ومن كل إعجاب أو رفض، ويكتب كإنسان حقيقي لا كأداة. الإعداد دقيقتان، وكل خطوة فيه اختيارية.
           </p>
-          <div className="value-props text-center" style={{ marginBottom: 30 }}>
+          <div className="value-props" style={{ marginBottom: 30 }}>
+            <div className="value-prop" style={{ alignItems: 'center' }}>
+              <Icon name="fingerprint" size={22} style={{ color: 'var(--brand)' }} />
+              <b>بصمة من نصوصك</b>
+              <span>الصق بوستاً كتبته ويستخلص صوتك فوراً</span>
+            </div>
             <div className="value-prop" style={{ alignItems: 'center' }}>
               <Icon name="brain" size={22} style={{ color: 'var(--violet)' }} />
-              <b>ملف أسلوب يتطور</b>
-              <span>يُستخلص من إعجاباتك ورفضك</span>
+              <b>يتحسن مع كل تقييم</b>
+              <span>سبب الرفض بلمسة، وملف أسلوب يتطور</span>
             </div>
             <div className="value-prop" style={{ alignItems: 'center' }}>
-              <Icon name="sparkles" size={22} style={{ color: 'var(--brand)' }} />
-              <b>4 بوستات كل جولة</b>
-              <span>زوايا مختلفة، وواحد يجرب شيئاً جديداً</span>
-            </div>
-            <div className="value-prop" style={{ alignItems: 'center' }}>
-              <Icon name="image" size={22} style={{ color: 'var(--brand-2)' }} />
-              <b>صور بأربعة أنماط</b>
-              <span>تتعلم من اختياراتك أيضاً</span>
+              <Icon name="sparkles" size={22} style={{ color: 'var(--brand-2)' }} />
+              <b>كتابة بشرية</b>
+              <span>بلا عبارات جاهزة ولا حماس مصطنع</span>
             </div>
           </div>
           <Button variant="primary" size="lg" onClick={() => setStep('field')} icon="arrow-left">
-            ابدأ في دقيقة
+            ابدأ
           </Button>
         </div>
       </div>
@@ -122,14 +136,12 @@ export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
     return (
       <div className="hero" style={{ alignItems: 'start', paddingTop: 48 }}>
         <div className="hero-inner fade-up">
-          <div className="eyebrow mb-1">الخطوة 1 من 3</div>
-          <h2 style={{ fontSize: 28, marginBottom: 6 }}>عن ماذا تكتب غالباً؟</h2>
-          <p className="muted mb-3">اختر مجالاً أو اثنين، أو تخطَّ وسيتعلم بصمة من تقييماتك.</p>
+          <StepHeader stepIndex={stepIndex} title="عن ماذا تكتب غالباً؟" sub="اختر مجالاً أو اثنين. يساعد بصمة على اقتراح مواضيع تخصك." />
           <div className="choice-grid mb-2">
             {fields.map((f) => {
               const on = selected.includes(f.key);
               return (
-                <button key={f.key} type="button" className={`choice-card ${on ? 'selected' : ''}`} onClick={() => toggleField(f.key)}>
+                <button key={f.key} type="button" className={`choice-card ${on ? 'selected' : ''}`} onClick={() => setSelected((s) => toggle(s, f.key, 2))}>
                   <span className="icon-bubble">
                     <Icon name={f.icon} size={20} />
                   </span>
@@ -153,47 +165,101 @@ export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
           </div>
           {showCustom && <input className="input input-lg mb-2 fade-in" autoFocus value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="مثل: العقارات، الصحة، القانون..." maxLength={60} />}
           <div className="row between mt-2">
-            <Button variant="ghost" onClick={() => setStep('style')} icon="skip-forward">
-              تخطي
-            </Button>
-            <Button variant="primary" size="lg" disabled={selected.length === 0 && !custom.trim()} onClick={() => setStep('style')} icon="arrow-left">
-              التالي
-            </Button>
+            <Button variant="ghost" onClick={() => setStep('samples')} icon="skip-forward">تخطي</Button>
+            <Button variant="primary" size="lg" disabled={selected.length === 0 && !custom.trim()} onClick={() => setStep('samples')} icon="arrow-left">التالي</Button>
           </div>
         </div>
       </div>
     );
   }
 
-  if (step === 'style') {
-    const q = questions[qIdx];
+  if (step === 'samples') {
     return (
       <div className="hero" style={{ alignItems: 'start', paddingTop: 48 }}>
-        <div className="hero-inner" style={{ maxWidth: 860 }}>
-          <div className="row between mb-2">
-            <div>
-              <div className="eyebrow mb-1">الخطوة 2 من 3 · {qIdx + 1}/{questions.length}</div>
-              <h2 style={{ fontSize: 28 }}>{q.q}</h2>
-              <p className="muted">اضغط على البوست الأقرب لأسلوبك</p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => answer('skip')} icon="skip-forward">
-              تخطي
-            </Button>
+        <div className="hero-inner fade-up" style={{ maxWidth: 720 }}>
+          <StepHeader stepIndex={stepIndex} title="أعطِ بصمة صوتك الحقيقي" sub="الصق بوستاً أو اثنين كتبتهما بنفسك على LinkedIn (أو أي نص بأسلوبك). هذا أقوى ما يتعلم منه بصمة، وأفضل من أي سؤال." />
+          <div className="stack" style={{ gap: 10 }}>
+            {samples.map((s, i) => (
+              <div key={i} className="card" style={{ padding: 12 }}>
+                <textarea className="textarea" value={s} onChange={(e) => setSamples((arr) => arr.map((x, k) => (k === i ? e.target.value : x)))} placeholder={i === 0 ? 'الصق هنا بوستاً كتبته بنفسك...' : 'بوست آخر (اختياري)'} style={{ minHeight: 120, border: 'none', background: 'transparent', padding: 4 }} maxLength={6000} />
+                <div className="row between">
+                  <span className="subtle">{s.trim().length < 20 ? 'على الأقل سطران' : `${s.trim().length} حرف`}</span>
+                  {samples.length > 1 && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setSamples((arr) => arr.filter((_, k) => k !== i))}>
+                      <Icon name="x" size={14} /> إزالة
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {samples.length < 5 && (
+              <Button variant="ghost" size="sm" icon="plus" onClick={() => setSamples((arr) => [...arr, ''])} style={{ alignSelf: 'start' }}>
+                أضف بوستاً آخر
+              </Button>
+            )}
           </div>
-          <Stepper items={questions.map((_, i) => (i < qIdx ? 'done' : i === qIdx ? 'active' : 'pending'))} />
-          <div key={qIdx} className="ab-grid mt-3 fade-up">
-            {(['a', 'b'] as const).map((k) => {
-              const opt = k === 'a' ? q.a : q.b;
-              return (
-                <button key={k} type="button" className="ab-option" onClick={() => answer(k)}>
-                  <span className="ab-label">
-                    <span className="ab-key">{k === 'a' ? 'A' : 'B'}</span>
-                    {opt.label}
-                  </span>
-                  <PostPreview content={opt.text} subtitle={spec} collapsible={false} />
+          <div className="card mt-2" style={{ padding: 14, borderStyle: 'dashed' }}>
+            <div className="row nowrap" style={{ gap: 10 }}>
+              <Icon name="info" size={18} style={{ color: 'var(--info)', flex: 'none' }} />
+              <span className="subtle">ما عندك بوستات؟ لا مشكلة. تخطَّ هذه الخطوة وسيتعلم بصمة من تقييماتك وتعديلاتك على أول جولة.</span>
+            </div>
+          </div>
+          <div className="row between mt-3">
+            <Button variant="ghost" onClick={() => setStep('field')} icon="arrow-right">رجوع</Button>
+            <div className="row" style={{ gap: 8 }}>
+              <Button variant="ghost" onClick={() => setStep('voice')} icon="skip-forward">تخطي</Button>
+              <Button variant="primary" size="lg" disabled={validSamples.length === 0} onClick={() => setStep('voice')} icon="arrow-left">التالي</Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'voice') {
+    return (
+      <div className="hero" style={{ alignItems: 'start', paddingTop: 48 }}>
+        <div className="hero-inner fade-up" style={{ maxWidth: 720 }}>
+          <StepHeader stepIndex={stepIndex} title="كيف يبدو صوتك؟" sub="لمسات سريعة، وكلها اختيارية. بصمة يعدّلها لاحقاً مما يتعلمه منك." />
+          <div className="card mb-2">
+            <div className="row between mb-2">
+              <b>صوتك</b>
+              <span className="subtle">حتى 3</span>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              {voices.map((v) => (
+                <button key={v.key} type="button" className={`chip ${voice.includes(v.key) ? 'active' : ''}`} onClick={() => setVoice((l) => toggle(l, v.key, 3))}>
+                  {v.label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+          <div className="card mb-2">
+            <b className="mb-2" style={{ display: 'block' }}>لغتك</b>
+            <div className="row" style={{ gap: 8 }}>
+              {languages.map((l) => (
+                <button key={l.key} type="button" className={`chip ${language === l.key ? 'active' : ''}`} onClick={() => setLanguage(language === l.key ? null : l.key)}>
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="card mb-2">
+            <div className="row between mb-2">
+              <b>ما تكرهه في بوستات LinkedIn</b>
+              <span className="subtle">يتجنبها بصمة تماماً</span>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              {avoids.map((a) => (
+                <button key={a.key} type="button" className={`chip ${avoid.includes(a.key) ? 'active' : ''}`} onClick={() => setAvoid((l) => toggle(l, a.key, 12))} style={avoid.includes(a.key) ? { borderColor: 'var(--danger)', color: 'var(--danger)', background: 'var(--danger-soft)' } : undefined}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="row between mt-3">
+            <Button variant="ghost" onClick={() => setStep('samples')} icon="arrow-right">رجوع</Button>
+            <Button variant="primary" size="lg" onClick={() => setStep('ready')} icon="arrow-left">التالي</Button>
           </div>
         </div>
       </div>
@@ -201,6 +267,10 @@ export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
   }
 
   // ready
+  const chips = [
+    ...voices.filter((v) => voice.includes(v.key)).map((v) => v.label),
+    ...languages.filter((l) => l.key === language).map((l) => l.label),
+  ];
   return (
     <div className="hero">
       <div className="hero-inner scale-in" style={{ maxWidth: 560 }}>
@@ -208,22 +278,19 @@ export function OnboardingWizard({ questions, fields, defaultSpec }: Props) {
           <div className="icon-bubble success" style={{ width: 64, height: 64, borderRadius: 20, margin: '0 auto 16px', display: 'grid', placeItems: 'center' }}>
             <Icon name="check" size={30} strokeWidth={2.5} />
           </div>
-          <div className="eyebrow mb-1">الخطوة 3 من 3</div>
-          <h2 style={{ fontSize: 26, marginBottom: 8 }}>جاهز! هذه بصمتك الأولى</h2>
-          <p className="muted mb-3">ستتطور مع كل تقييم. الآن نكتب أول 4 بوستات.</p>
-          <div className="row center mb-2">
+          <h2 style={{ fontSize: 26, marginBottom: 8 }}>جاهز</h2>
+          <p className="muted mb-3">
+            {validSamples.length ? `سيستخلص بصمتك من ${validSamples.length === 1 ? 'نصك' : `${validSamples.length} نصوص`} ثم يكتب أول 4 بوستات بصوتك.` : 'سيكتب أول 4 بوستات بأشكال مختلفة ويتعلم من تقييمك لها.'}
+          </p>
+          <div className="row center mb-2" style={{ gap: 6 }}>
             <Pill tone="brand" icon="briefcase">{spec}</Pill>
-            {chosenRules.map((r) => (
-              <Pill key={r} tone="violet">{r}</Pill>
-            ))}
-            {chosenRules.length === 0 && <Pill>بدون تفضيلات مسبقة، سيتعلم من تقييماتك</Pill>}
+            {chips.map((c) => <Pill key={c} tone="violet">{c}</Pill>)}
+            {avoid.length > 0 && <Pill tone="danger" icon="x">يتجنب {avoid.length}</Pill>}
           </div>
           <Button variant="primary" size="lg" block onClick={start} icon="sparkles">
             ولّد أول 4 بوستات
           </Button>
-          <button className="btn btn-ghost btn-sm mt-2" onClick={() => { setChoices([]); setQIdx(0); setStep('style'); }}>
-            أعد اختيار الأسلوب
-          </button>
+          <button className="btn btn-ghost btn-sm mt-2" onClick={() => setStep('voice')}>رجوع</button>
           {err && <p className="subtle mt-2" style={{ color: 'var(--danger)' }}>{err}</p>}
         </div>
       </div>
