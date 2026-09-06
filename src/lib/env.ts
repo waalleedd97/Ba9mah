@@ -16,6 +16,8 @@ const EnvSchema = z.object({
   LABOR_LAW_CHECK: z.enum(['auto', 'always', 'off']).default('auto'),
   DATA_DIR: z.string().default('./data'),
   BASMA_MOCK_AI: z.string().optional(),
+  BASMA_BUILD_SHA: z.string().default('dev'),
+  BASMA_BUILD_DATE: z.string().default(''),
 });
 
 export type Env = z.infer<typeof EnvSchema> & { mockAi: boolean; isProd: boolean };

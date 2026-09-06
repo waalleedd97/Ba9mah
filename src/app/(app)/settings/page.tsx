@@ -37,6 +37,7 @@ export default function SettingsPage() {
             <tr><th>الصور</th><td><span className="kbd">{env.GEMINI_IMAGE_MODEL}</span></td><td>{keyOk(env.GEMINI_API_KEY) ? <Pill tone="success">مفتاح مضبوط</Pill> : <Pill tone="warn">بدون مفتاح</Pill>}</td></tr>
             <tr><th>التحقق من نظام العمل</th><td colSpan={2}>{laborLabel}</td></tr>
             <tr><th>مجلد البيانات</th><td colSpan={2}><span className="kbd">{env.DATA_DIR}</span></td></tr>
+            <tr><th>إصدار التطبيق</th><td colSpan={2}><span className="kbd">{env.BASMA_BUILD_SHA}</span>{env.BASMA_BUILD_DATE ? <span className="subtle"> · بُني {env.BASMA_BUILD_DATE}</span> : null}</td></tr>
           </tbody>
         </table>
         <p className="subtle mt-2">

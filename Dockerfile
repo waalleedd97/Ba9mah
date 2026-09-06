@@ -30,9 +30,13 @@ RUN npm run build
 # ---------- المرحلة 3: التشغيل ----------
 FROM base AS runner
 WORKDIR /app
+ARG GIT_SHA=dev
+ARG BUILD_DATE=unknown
 ENV PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    BASMA_BUILD_SHA=$GIT_SHA \
+    BASMA_BUILD_DATE=$BUILD_DATE
 
 RUN groupadd --system --gid 1001 nodejs \
  && useradd --system --uid 1001 --gid nodejs --home /app basma \

@@ -8,7 +8,11 @@
 # ============================================================
 services:
   basma:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     image: basma:latest
     container_name: basma
     restart: unless-stopped
