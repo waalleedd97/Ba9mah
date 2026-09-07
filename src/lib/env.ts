@@ -57,13 +57,13 @@ export function requireAuthConfig(): { password: string; secret: string } {
 export function requireAnthropicKey(): string {
   const env = getEnv();
   if (env.mockAi) return 'mock';
-  if (!env.ANTHROPIC_API_KEY) throw new ConfigError('ANTHROPIC_API_KEY غير مضبوط في ملف .env');
+  if (!env.ANTHROPIC_API_KEY) throw new ConfigError('مفتاح Claude غير مضبوط: أعد تشغيل سكربت النشر مع --anthropic-key');
   return env.ANTHROPIC_API_KEY;
 }
 
 export function requireGeminiKey(): string {
   const env = getEnv();
   if (env.mockAi) return 'mock';
-  if (!env.GEMINI_API_KEY) throw new ConfigError('GEMINI_API_KEY غير مضبوط في ملف .env');
+  if (!env.GEMINI_API_KEY) throw new ConfigError('مفتاح Gemini غير مضبوط: توليد الصور معطّل حتى تعيد تشغيل سكربت النشر مع --gemini-key');
   return env.GEMINI_API_KEY;
 }

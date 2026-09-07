@@ -43,7 +43,7 @@ print('== onboarding ==')
 s,b,_=req('POST','/api/onboarding',{'spec':'الموارد البشرية','samples':['هذا نص كتبته بنفسي عن التوظيف الذكي وكيف نختار الشخص المناسب بدل السيرة اللامعة.'],'voice':['direct','story','practical'],'language':'saudi','avoid':['preachy','emoji']}); check('onboarding', s==200 and b.get('samples')==1 and b.get('profile')==True, b)
 s,b,_=req('POST','/api/onboarding',{'spec':'x y','samples':[],'voice':[],'avoid':[]}); check('onboarding twice 409', s==409)
 s,b,_=req('GET','/',raw=True); check('dashboard html 200', s==200 and 'بصمة'.encode() in b)
-s,b,_=req('GET','/api/state'); check('state', s==200 and b['stats']['liked']==1 and b['stats']['goldenRules']==4 and b['stats']['avoidRules']==2 and b['stats']['profileVersion']==1, b['stats'])
+s,b,_=req('GET','/api/state'); check('state', s==200 and b['stats']['liked']==0 and b['stats']['own']==1 and b['stats']['goldenRules']==4 and b['stats']['avoidRules']==2 and b['stats']['profileVersion']==1, b['stats'])
 
 print('== round ==')
 s,b,_=req('POST','/api/rounds',{'topic':'التوظيف الذكي'}); check('generate round', s==200 and len(b['posts'])==4, {k:b['round'][k] for k in ('id','exploratory','topic')} if s==200 else b)
@@ -88,7 +88,7 @@ s,b,_=req('GET','/api/rules?kind=image_style'); check('learned image style rule 
 s,b,_=req('GET','/api/rules?kind=image_avoid'); check('learned image avoid rule from dislike', any(r['source']=='learned' for r in b['rules']))
 s,b,_=req('GET','/api/profile'); check('profile relearned after round', s==200 and b['profile'] and b['profile']['version']>=2, (b['profile'] or {}).get('version'))
 s,b,_=req('POST','/api/profile'); check('manual relearn bumps version', s==200 and b['profile']['version']>=3)
-s,b,_=req('GET','/api/state'); check('state after round', b['stats']['liked']==4 and b['stats']['disliked']==1 and b['stats']['rounds']==1 and b['stats']['profileVersion']>=3, b['stats'])
+s,b,_=req('GET','/api/state'); check('state after round', b['stats']['liked']==3 and b['stats']['own']==1 and b['stats']['disliked']==1 and b['stats']['rounds']==1 and b['stats']['profileVersion']>=3, b['stats'])
 
 print('== rules / posts crud ==')
 s,b,_=req('POST','/api/rules',{'kind':'golden','text':'قاعدة اختبار'}); check('add rule', s==201); rid2=b['rule']['id']
