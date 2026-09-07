@@ -87,7 +87,9 @@ export function listRoundSummaries(limit = 6): RoundSummary[] {
               COALESCE(SUM(CASE WHEN p.rating = 'disliked' THEN 1 ELSE 0 END), 0) AS disliked,
               COUNT(p.id) AS total
        FROM rounds r LEFT JOIN posts p ON p.round_id = r.id
-       GROUP BY r.id ORDER BY r.id DESC LIMIT ?`,
+       GROUP BY r.id
+       HAVING COUNT(p.id) > 0
+       ORDER BY r.id DESC LIMIT ?`,
     )
     .all(limit) as Array<RoundRow & { liked: number; disliked: number; total: number }>;
   return rows.map((r) => ({ ...rowToRound(r), liked: r.liked, disliked: r.disliked, total: r.total }));
