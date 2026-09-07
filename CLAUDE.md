@@ -5,6 +5,7 @@
 ## البيئة الإنتاجية (Hetzner)
 
 - السيرفر: `root@167.233.196.52` (Ubuntu). استخدم SSH بمفتاح؛ الأوامر عبر `ssh root@167.233.196.52 '...'`.
+- إذا كانت الجلسة تعمل على السيرفر نفسه (المضيف `njd-services-prod`، المستخدم root) فنفّذ الأوامر مباشرة بلا SSH. نسخة العمل هناك هي `/opt/basma` على فرع `main`؛ لا تعدّل فيها يدوياً، والنشر يسحب `main` من GitHub.
 - المسار: `/opt/basma` — Docker Compose + Caddy (HTTPS تلقائي). الدومين: https://basma.njd-services.net
 - **النشر والتحديث** (يسحب `main` ويعيد البناء ويحافظ على `.env` والبيانات):
   `sudo bash /opt/basma/scripts/deploy-hetzner.sh`
