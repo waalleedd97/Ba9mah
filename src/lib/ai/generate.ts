@@ -12,7 +12,7 @@ import {
   ruleTexts,
 } from '@/lib/db/repo';
 import type { Post, Round } from '@/lib/types';
-import { AIError, structuredCall } from './anthropic';
+import { AIError, structuredCall } from './gemini';
 import { GenerationSchema } from './schemas';
 import { buildGenerationSystem, buildGenerationUser, explorationCount, selectExamples } from './prompts';
 import { verifyIfNeeded } from './labor-law';

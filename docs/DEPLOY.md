@@ -8,7 +8,7 @@
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/waalleedd97/Ba9mah/main/scripts/deploy-hetzner.sh -o deploy.sh
-sudo bash deploy.sh --password 'كلمة-مرور-قوية' --anthropic-key sk-ant-... --gemini-key AIza... --domain basma.example.com
+sudo bash deploy.sh --password 'كلمة-مرور-قوية' --gemini-key المفتاح --domain basma.example.com
 ```
 
 السكربت يثبّت Docker إن لزم، يستنسخ المستودع في `/opt/basma`، يكتب `.env` ويولّد `AUTH_SECRET`، يفتح المنافذ، يشغّل الحاويات مع Caddy للـ HTTPS (احذف `--domain` لو عندك reverse proxy)، ويتحقق من الصحة. للتحديث لاحقاً شغّله بدون معاملات.
@@ -21,7 +21,7 @@ sudo bash deploy.sh --password 'كلمة-مرور-قوية' --anthropic-key sk-a
 
 - سيرفر Ubuntu 22.04 أو 24.04 (أصغر باقة CX/CAX تكفي).
 - دومين أو subdomain يشير إلى IP السيرفر (اختياري لكنه ضروري للـ HTTPS).
-- مفتاحا Anthropic و Gemini.
+- مفتاح Gemini من aistudio.google.com/apikey (الصور تحتاج فوترة مفعّلة في مشروع Google).
 
 ## 2) تثبيت Docker
 
@@ -45,8 +45,7 @@ nano .env
 ```
 APP_PASSWORD=كلمة-مرور-قوية
 AUTH_SECRET=$(openssl rand -hex 32)   # انسخ الناتج الفعلي هنا
-ANTHROPIC_API_KEY=sk-ant-...
-GEMINI_API_KEY=AIza...
+GEMINI_API_KEY=المفتاح
 ```
 
 ## 4) التشغيل
@@ -118,7 +117,8 @@ docker compose ps
 |---|---|
 | صفحة الدخول تعيد تحميل نفسها بعد كلمة المرور الصحيحة | البروكسي لا يمرر `X-Forwarded-Proto` أو تفتح الموقع بـ http عبر بروكسي https. أصلح الترويسة أو ادخل عبر https |
 | `APP_PASSWORD غير مضبوط` أو `AUTH_SECRET ... أقصر من 32` | راجع `.env` ثم `docker compose up -d` |
-| `مفتاح ANTHROPIC_API_KEY غير صالح` | المفتاح خاطئ أو الحساب بلا رصيد |
+| `مفتاح Gemini غير صالح` | المفتاح خاطئ أو غير مفعّل |
+| `حصة الصور غير متاحة` | فعّل الفوترة في مشروع Google المرتبط بالمفتاح |
 | `نموذج الصور ... غير متاح لحسابك` | غيّر `GEMINI_IMAGE_MODEL` إلى نموذج متاح لحسابك (مثل `gemini-2.5-flash-image`) |
 | بطء أول توليد | طبيعي: الجولة الأولى تبني الكاش، والتحقق القانوني يضيف ثوانٍ لبوستات الموارد البشرية |
 

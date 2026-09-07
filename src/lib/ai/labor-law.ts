@@ -2,7 +2,7 @@ import 'server-only';
 import { getEnv } from '@/lib/env';
 import { LABOR_LAW_TEXT } from './labor-law-text';
 import { LaborLawSchema } from './schemas';
-import { structuredCall, systemText, AIError } from './anthropic';
+import { structuredCall, systemText, AIError } from './gemini';
 
 /** مصطلحات تدل على معلومة قانونية تستحق التحقق من نظام العمل السعودي */
 const LEGAL_TERMS =

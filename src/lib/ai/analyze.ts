@@ -3,7 +3,7 @@ import { addDislikeReason, addRule, capLearnedRules, getPost, latestProfile, rul
 import type { ImageRecord, Post } from '@/lib/types';
 import { readImageFile } from '@/lib/images/storage';
 import { getImageFile } from '@/lib/db/repo';
-import { imageBlock, structuredCall, systemText } from './anthropic';
+import { imageBlock, structuredCall, systemText } from './gemini';
 import { DislikeAnalysisSchema, ImageDislikeSchema, ImageLikeSchema } from './schemas';
 import { DISLIKE_SYSTEM, buildDislikeUser } from './prompts';
 

@@ -15,7 +15,6 @@ runcmd:
   - >
     bash /root/deploy.sh
     --password '<APP_PASSWORD>'
-    --anthropic-key '<ANTHROPIC_API_KEY>'
     --gemini-key '<GEMINI_API_KEY>'
     --domain '<basma.example.com>'
     --branch main

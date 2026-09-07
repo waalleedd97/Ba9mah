@@ -14,7 +14,7 @@ import {
   setSetting,
 } from '@/lib/db/repo';
 import type { StyleProfile } from '@/lib/types';
-import { structuredCall, systemText } from './anthropic';
+import { structuredCall, systemText } from './gemini';
 import { StyleProfileSchema } from './schemas';
 import { LEARN_SYSTEM, buildLearnUser, buildOwnCorpusBlock, renderProfileMarkdown } from './prompts';
 

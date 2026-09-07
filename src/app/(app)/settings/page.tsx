@@ -25,11 +25,11 @@ export default function SettingsPage() {
       {env.mockAi && (
         <div className="card mb-2 fade-up" style={{ borderColor: 'var(--warn)' }}>
           <b style={{ color: 'var(--warn)' }}>وضع الاختبار مفعّل: البوستات والصور وهمية</b>
-          <p className="subtle" style={{ marginTop: 6 }}>مفتاح Claude غير مضبوط بعد. أنشئ مفتاحاً من console.anthropic.com ثم نفّذ هذا الأمر على السيرفر عبر SSH (يحافظ على بياناتك):</p>
+          <p className="subtle" style={{ marginTop: 6 }}>مفتاح Gemini غير مضبوط بعد. أنشئ مفتاحاً من aistudio.google.com/apikey ثم نفّذ هذا الأمر على السيرفر عبر SSH (يحافظ على بياناتك):</p>
           <code className="kbd" style={{ display: 'block', direction: 'ltr', textAlign: 'left', whiteSpace: 'pre-wrap', padding: '10px 12px', marginTop: 8 }}>
-            sudo bash /opt/basma/scripts/deploy-hetzner.sh --anthropic-key sk-ant-...
+            sudo bash /opt/basma/scripts/deploy-hetzner.sh --gemini-key المفتاح
           </code>
-          <p className="subtle" style={{ marginTop: 8 }}>مفتاح Gemini (من aistudio.google.com/apikey) اختياري وتضيفه بنفس الأمر مع <span className="kbd">--gemini-key AIza...</span>؛ بدونه تعمل الكتابة كاملة ويتوقف توليد الصور فقط.</p>
+          <p className="subtle" style={{ marginTop: 8 }}>الكتابة والتعلم يعملان على الحصة المجانية. توليد الصور يتطلب تفعيل الفوترة في مشروع Google المرتبط بالمفتاح.</p>
         </div>
       )}
 
@@ -37,8 +37,8 @@ export default function SettingsPage() {
         <SectionTitle icon="cpu" tone="info">النماذج</SectionTitle>
         <table className="stats-table">
           <tbody>
-            <tr><th>الكتابة والتعلم</th><td><span className="kbd">{env.CLAUDE_MODEL}</span></td><td>{keyOk(env.ANTHROPIC_API_KEY) ? <Pill tone="success">مفتاح مضبوط</Pill> : <Pill tone="warn">بدون مفتاح</Pill>}</td></tr>
-            <tr><th>الصور</th><td><span className="kbd">{env.GEMINI_IMAGE_MODEL}</span></td><td>{keyOk(env.GEMINI_API_KEY) ? <Pill tone="success">مفتاح مضبوط</Pill> : <Pill tone="warn">بدون مفتاح</Pill>}</td></tr>
+            <tr><th>الكتابة والتعلم</th><td><span className="kbd">{env.GEMINI_TEXT_MODEL}</span>{env.GEMINI_TEXT_FALLBACKS ? <span className="subtle"> · بدائل: {env.GEMINI_TEXT_FALLBACKS.split(',').join('، ')}</span> : null}</td><td>{keyOk(env.GEMINI_API_KEY) ? <Pill tone="success">مفتاح مضبوط</Pill> : <Pill tone="warn">بدون مفتاح</Pill>}</td></tr>
+            <tr><th>الصور</th><td><span className="kbd">{env.GEMINI_IMAGE_MODEL}</span><span className="subtle"> · يتطلب فوترة مفعّلة في مشروع Google</span></td><td>{keyOk(env.GEMINI_API_KEY) ? <Pill tone="success">مفتاح مضبوط</Pill> : <Pill tone="warn">بدون مفتاح</Pill>}</td></tr>
             <tr><th>التحقق من نظام العمل</th><td colSpan={2}>{laborLabel}</td></tr>
             <tr><th>مجلد البيانات</th><td colSpan={2}><span className="kbd">{env.DATA_DIR}</span></td></tr>
             <tr><th>إصدار التطبيق</th><td colSpan={2}><span className="kbd">{env.BASMA_BUILD_SHA}</span>{env.BASMA_BUILD_DATE ? <span className="subtle"> · بُني {env.BASMA_BUILD_DATE}</span> : null}</td></tr>
