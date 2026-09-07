@@ -14,7 +14,7 @@ import {
 import type { Post, Round } from '@/lib/types';
 import { AIError, structuredCall } from './gemini';
 import { GenerationSchema } from './schemas';
-import { buildGenerationSystem, buildGenerationUser, explorationCount, selectExamples } from './prompts';
+import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, selectExamples } from './prompts';
 import { verifyIfNeeded } from './labor-law';
 
 export interface GeneratedRound {
@@ -36,6 +36,8 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
   const roundsSoFar = countRounds();
   const exploratory = explorationCount(countByRating('liked'), roundsSoFar);
 
+  // شكل المستخدم البصري (أسطر قصيرة، أسطر فارغة) يُحسب من نصوصه هو لا من المولّد
+  const own = liked.filter((p) => p.kind === 'own');
   const system = buildGenerationSystem({ spec, profile, goldenRules, avoidRules });
   const user = buildGenerationUser({
     topic,
@@ -44,6 +46,7 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
     recentTopics: recentTopics(24),
     exploratory,
     roundNumber: roundsSoFar + 1,
+    layout: own.length >= 5 ? corpusStats(own) : null,
   });
 
   const { data, usage, model } = await structuredCall({
