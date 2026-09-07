@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { z } from 'zod';
-import { AIError } from '@/lib/ai/anthropic';
+import { AIError } from '@/lib/ai/gemini';
 import { ConfigError } from '@/lib/env';
 
 export class HttpError extends Error {

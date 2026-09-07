@@ -5,9 +5,9 @@
 #  أول مرة (على السيرفر، كـ root أو مع sudo):
 #    curl -fsSL https://raw.githubusercontent.com/waalleedd97/Ba9mah/main/scripts/deploy-hetzner.sh -o deploy.sh
 #    sudo bash deploy.sh --password 'كلمة-مرور-قوية' \
-#         [--anthropic-key sk-ant-...] [--gemini-key AIza...] \
+#         [--gemini-key المفتاح] \
 #         [--domain basma.example.com | --no-domain] [--branch main] [--dir /opt/basma]
-#    (بدون مفتاح Anthropic يعمل التطبيق بوضع الاختبار؛ مفتاح Gemini اختياري للصور. تضيفهما لاحقاً بنفس الأمر)
+#    (مفتاح Gemini يشغّل الكتابة والتعلم والصور. بدونه يعمل التطبيق بوضع الاختبار حتى تضيفه لاحقاً بنفس الأمر)
 #
 #  التحديث لاحقاً: sudo bash /opt/basma/scripts/deploy-hetzner.sh
 #  (بدون معاملات: يسحب آخر إصدار ويعيد البناء ويحافظ على .env والبيانات)
@@ -20,7 +20,6 @@ BRANCH="main"
 DOMAIN=""
 NO_DOMAIN=0
 PASSWORD=""
-ANTHROPIC_KEY=""
 GEMINI_KEY=""
 IMAGE_MODEL=""
 
@@ -29,7 +28,6 @@ usage() { sed -n '2,14p' "$0"; exit 1; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --password) PASSWORD="$2"; shift 2 ;;
-    --anthropic-key) ANTHROPIC_KEY="$2"; shift 2 ;;
     --gemini-key) GEMINI_KEY="$2"; shift 2 ;;
     --domain) DOMAIN="$2"; shift 2 ;;
     --no-domain) NO_DOMAIN=1; shift ;;
@@ -49,7 +47,6 @@ die() { printf '\n\033[1;31mخطأ: %s\033[0m\n' "$*" >&2; exit 1; }
 # قيم نموذجية منسوخة من التعليمات كما هي؟
 is_placeholder() { [[ -z "$1" || "$1" == *"..."* || "$1" == *xxxxx* || "$1" == "كلمة-مرور-قوية" || "$1" == "change-me-now" || "$1" == *example.com* ]]; }
 [[ -n "$PASSWORD" ]] && is_placeholder "$PASSWORD" && die "بدّل 'كلمة-مرور-قوية' بكلمة مرور حقيقية"
-[[ -n "$ANTHROPIC_KEY" ]] && { is_placeholder "$ANTHROPIC_KEY" || [[ "$ANTHROPIC_KEY" != sk-ant-* ]]; } && die "مفتاح Anthropic غير صالح: يجب أن يبدأ بـ sk-ant- ويكون كاملاً"
 [[ -n "$GEMINI_KEY" ]] && { is_placeholder "$GEMINI_KEY" || [[ ${#GEMINI_KEY} -lt 30 ]]; } && die "مفتاح Gemini غير صالح: انسخه كاملاً من aistudio.google.com/apikey"
 [[ -n "$DOMAIN" ]] && { is_placeholder "$DOMAIN" || [[ "$DOMAIN" != *.* ]]; } && die "الدومين غير صالح: استخدم دومينك الحقيقي الموجّه إلى هذا السيرفر، أو --no-domain"
 
@@ -88,8 +85,9 @@ set_env() { # KEY VALUE — يعدّل السطر أو يضيفه
 get_env() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true; }
 
 [[ -n "$PASSWORD" ]] && set_env APP_PASSWORD "$PASSWORD"
-[[ -n "$ANTHROPIC_KEY" ]] && set_env ANTHROPIC_API_KEY "$ANTHROPIC_KEY"
 [[ -n "$GEMINI_KEY" ]] && set_env GEMINI_API_KEY "$GEMINI_KEY"
+# إعدادات Claude القديمة لم تعد مستخدمة
+sed -i "/^ANTHROPIC_API_KEY=/d; /^CLAUDE_MODEL=/d" .env
 [[ -n "$IMAGE_MODEL" ]] && set_env GEMINI_IMAGE_MODEL "$IMAGE_MODEL"
 [[ -n "$DOMAIN" ]] && set_env BASMA_DOMAIN "$DOMAIN"
 if [[ $NO_DOMAIN -eq 1 ]]; then
@@ -105,18 +103,15 @@ if [[ -z "$secret" || "$secret" == replace-with-* || ${#secret} -lt 32 ]]; then
   log "وُلّد AUTH_SECRET جديد"
 fi
 is_placeholder "$(get_env APP_PASSWORD)" && die "كلمة المرور في .env قيمة نموذجية. شغّل مع: --password 'كلمتك'"
-# المفاتيح اختيارية: مفتاح Anthropic يشغّل الكتابة والتعلم، ومفتاح Gemini يضيف الصور.
-# بدون مفتاح Anthropic يعمل التطبيق بوضع الاختبار (نتائج وهمية) حتى يُضاف
-a="$(get_env ANTHROPIC_API_KEY)"; g="$(get_env GEMINI_API_KEY)"
-KEYS_OK=1; GEMINI_OK=1
-{ is_placeholder "$a" || [[ "$a" != sk-ant-* ]]; } && KEYS_OK=0
-{ is_placeholder "$g" || [[ ${#g} -lt 30 ]]; } && GEMINI_OK=0
+# مفتاح Gemini يشغّل كل شيء (الكتابة والتعلم والصور). بدونه يعمل التطبيق بوضع الاختبار (نتائج وهمية) حتى يُضاف
+g="$(get_env GEMINI_API_KEY)"
+KEYS_OK=1
+{ is_placeholder "$g" || [[ ${#g} -lt 30 ]]; } && KEYS_OK=0
 if [[ $KEYS_OK -eq 1 ]]; then
   set_env BASMA_MOCK_AI 0
-  [[ $GEMINI_OK -eq 1 ]] || printf '\n\033[1;33mتنبيه: مفتاح Gemini غير مضبوط. الكتابة والتعلم يعملان، وتوليد الصور معطّل حتى تعيد تشغيل السكربت مع --gemini-key AIza...\033[0m\n'
 else
   set_env BASMA_MOCK_AI 1
-  printf '\n\033[1;33mتنبيه: مفتاح Anthropic غير مضبوط بعد. التطبيق سيعمل بوضع الاختبار (بوستات وصور وهمية)\nحتى تعيد تشغيل السكربت مع --anthropic-key sk-ant-... (وأضف --gemini-key AIza... للصور)\033[0m\n'
+  printf '\n\033[1;33mتنبيه: مفتاح Gemini غير مضبوط بعد. التطبيق سيعمل بوضع الاختبار (بوستات وصور وهمية)\nحتى تعيد تشغيل السكربت مع --gemini-key المفتاح\033[0m\n'
 fi
 d="$(get_env BASMA_DOMAIN)"; [[ -n "$d" ]] && is_placeholder "$d" && die "الدومين في .env قيمة نموذجية. شغّل مع --domain دومينك أو --no-domain"
 chmod 600 .env
@@ -158,7 +153,6 @@ if [[ -n "$(get_env BASMA_DOMAIN)" ]]; then
 else
   echo "التطبيق يستمع على 127.0.0.1:3000 فقط. وجّه الـ reverse proxy إليه، أو أعد التشغيل مع --domain لتفعيل HTTPS تلقائياً."
 fi
-[[ $KEYS_OK -eq 1 ]] || echo "وضع الاختبار مفعّل (بدون مفتاح Anthropic). لتفعيل الكتابة: sudo bash $APP_DIR/scripts/deploy-hetzner.sh --anthropic-key sk-ant-...   (أضف --gemini-key AIza... للصور)"
-[[ $KEYS_OK -eq 0 || $GEMINI_OK -eq 1 ]] || echo "الصور معطّلة (بدون مفتاح Gemini). لتفعيلها: sudo bash $APP_DIR/scripts/deploy-hetzner.sh --gemini-key AIza..."
+[[ $KEYS_OK -eq 1 ]] || echo "وضع الاختبار مفعّل (بدون مفتاح Gemini). للتفعيل: sudo bash $APP_DIR/scripts/deploy-hetzner.sh --gemini-key المفتاح"
 echo "السجلات:  docker compose -f $APP_DIR/docker-compose.yml logs -f basma"
 echo "التحديث:  sudo bash $APP_DIR/scripts/deploy-hetzner.sh"

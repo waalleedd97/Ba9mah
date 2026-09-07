@@ -1771,7 +1771,7 @@ button.nav-item {
   }
 }
 
-/* شريط وضع الاختبار (بدون مفتاح Claude) */
+/* شريط وضع الاختبار (بدون مفتاح Gemini) */
 .mock-banner {
   display: flex;
   align-items: center;

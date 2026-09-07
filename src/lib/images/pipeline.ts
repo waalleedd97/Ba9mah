@@ -16,7 +16,7 @@ import {
   updateSaved,
 } from '@/lib/db/repo';
 import type { ImageRecord, ImageStylePreset, Post, SavedPost } from '@/lib/types';
-import { AIError, structuredCall, systemText } from '@/lib/ai/anthropic';
+import { AIError, structuredCall, systemText } from '@/lib/ai/gemini';
 import { ArtDirectionSchema, type ArtDirection } from '@/lib/ai/schemas';
 import { generateImage } from './gemini';
 import { saveImageFile } from './storage';

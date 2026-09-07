@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   // better-sqlite3 وحدة native — لا تُحزَّم مع Turbopack بل تُحمَّل من node_modules وقت التشغيل
-  serverExternalPackages: ['better-sqlite3'],
+  serverExternalPackages: ['better-sqlite3', '@google/genai'],
   images: {
     // الصور تُقدَّم من مسار API خاص بنا بعد التحقق من الجلسة، فلا حاجة لمحسّن الصور
     unoptimized: true,

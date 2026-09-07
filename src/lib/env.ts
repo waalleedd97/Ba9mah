@@ -9,9 +9,11 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   APP_PASSWORD: z.string().optional(),
   AUTH_SECRET: z.string().optional(),
-  ANTHROPIC_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
-  CLAUDE_MODEL: z.string().default('claude-opus-5'),
+  /** نموذج النص الأساسي للكتابة والتعلم والتحليل */
+  GEMINI_TEXT_MODEL: z.string().default('gemini-3-flash-preview'),
+  /** بدائل تُجرَّب بالترتيب عند ضغط عالٍ أو نفاد حصة النموذج الأساسي */
+  GEMINI_TEXT_FALLBACKS: z.string().default('gemini-3.7-flash,gemini-3.1-flash-lite'),
   GEMINI_IMAGE_MODEL: z.string().default('gemini-3.1-flash-image'),
   LABOR_LAW_CHECK: z.enum(['auto', 'always', 'off']).default('auto'),
   DATA_DIR: z.string().default('./data'),
@@ -54,16 +56,9 @@ export function requireAuthConfig(): { password: string; secret: string } {
   return { password: env.APP_PASSWORD, secret: env.AUTH_SECRET };
 }
 
-export function requireAnthropicKey(): string {
-  const env = getEnv();
-  if (env.mockAi) return 'mock';
-  if (!env.ANTHROPIC_API_KEY) throw new ConfigError('مفتاح Claude غير مضبوط: أعد تشغيل سكربت النشر مع --anthropic-key');
-  return env.ANTHROPIC_API_KEY;
-}
-
 export function requireGeminiKey(): string {
   const env = getEnv();
   if (env.mockAi) return 'mock';
-  if (!env.GEMINI_API_KEY) throw new ConfigError('مفتاح Gemini غير مضبوط: توليد الصور معطّل حتى تعيد تشغيل سكربت النشر مع --gemini-key');
+  if (!env.GEMINI_API_KEY) throw new ConfigError('مفتاح Gemini غير مضبوط: أعد تشغيل سكربت النشر مع --gemini-key');
   return env.GEMINI_API_KEY;
 }

@@ -1,6 +1,6 @@
 # 🫆 بصمة — Basma v2
 
-مولّد محتوى LinkedIn بالعربية يتعلم ذوقك مع كل تقييم. نسخة 2 أُعيد بناؤها بالكامل: ذاكرة سحابية على سيرفرك، ملف أسلوب يُستخلص تلقائياً، وأحدث نماذج Claude و Gemini.
+مولّد محتوى LinkedIn بالعربية يتعلم ذوقك مع كل تقييم. نسخة 2 أُعيد بناؤها بالكامل: ذاكرة سحابية على سيرفرك، ملف أسلوب يُستخلص تلقائياً، وأحدث نماذج Gemini.
 
 ## ماذا يفعل؟
 
@@ -15,7 +15,7 @@
 | الطبقة | التقنية |
 |---|---|
 | الإطار | Next.js 16 (App Router, Turbopack, `proxy.ts`) + React 19 + TypeScript |
-| الكتابة والتعلم والتحليل | Claude Opus 5 عبر `@anthropic-ai/sdk` بمخرجات منظّمة (zod) وتفكير تكيفي و prompt caching |
+| الكتابة والتعلم والتحليل | Gemini (`gemini-3-flash-preview` افتراضياً) عبر `@google/genai` بمخرجات JSON مطابقة لـ zod، تفكير بمستوى لكل مسار، وانتقال تلقائي لنموذج بديل عند الضغط أو نفاد الحصة |
 | الصور | Gemini `gemini-3.1-flash-image` (Nano Banana 2) عبر `@google/genai`، قابل للتبديل |
 | التخزين | SQLite (`better-sqlite3`) + ملفات الصور على القرص في `DATA_DIR` |
 | الدخول | كلمة مرور واحدة، جلسة موقّعة HMAC في كوكي HttpOnly، حماية من تكرار المحاولات |
@@ -30,7 +30,7 @@ src/
 │   └── layout.tsx, globals.css
 ├── components/           المكوّنات التفاعلية (RatingFlow, ImageGrid, Dashboard, TrainPanel, Studio, ...)
 ├── lib/
-│   ├── ai/               anthropic.ts (النداء الموحد), generate, learn, analyze, edit, labor-law, prompts, schemas
+│   ├── ai/               gemini.ts (النداء الموحد), generate, learn, analyze, edit, labor-law, prompts, schemas
 │   ├── images/           gemini.ts, pipeline.ts (إخراج فني + 4 أنماط), storage.ts, styles.ts
 │   ├── db/               الاتصال + migrations مضمّنة + repo/*
 │   ├── auth/             session.ts, rate-limit.ts
@@ -46,15 +46,15 @@ cp .env.example .env      # عبّئ APP_PASSWORD و AUTH_SECRET والمفات�
 npm run dev               # http://localhost:3000
 ```
 
-بدون مفاتيح؟ ضع `BASMA_MOCK_AI=1` في `.env` وسيعمل كل شيء بنتائج وهمية. مفتاح Gemini اختياري: بدونه تعمل الكتابة والتعلم ويتوقف توليد الصور فقط.
+بدون مفتاح؟ ضع `BASMA_MOCK_AI=1` في `.env` وسيعمل كل شيء بنتائج وهمية. الكتابة والتعلم تعمل على الحصة المجانية لمفتاح Gemini؛ توليد الصور يتطلب تفعيل الفوترة في مشروع Google المرتبط بالمفتاح.
 
 | متغير | الوصف |
 |---|---|
 | `APP_PASSWORD` | كلمة مرور الدخول |
 | `AUTH_SECRET` | 64 حرفاً hex لتوقيع الجلسة: `openssl rand -hex 32` |
-| `ANTHROPIC_API_KEY` | مفتاح Claude |
-| `GEMINI_API_KEY` | مفتاح Gemini |
-| `CLAUDE_MODEL` | افتراضياً `claude-opus-5` |
+| `GEMINI_API_KEY` | مفتاح Gemini (كل شيء: نص وصور) |
+| `GEMINI_TEXT_MODEL` | افتراضياً `gemini-3-flash-preview` |
+| `GEMINI_TEXT_FALLBACKS` | بدائل بالترتيب، افتراضياً `gemini-3.7-flash,gemini-3.1-flash-lite` |
 | `GEMINI_IMAGE_MODEL` | افتراضياً `gemini-3.1-flash-image`، وللجودة الأعلى `gemini-3-pro-image-preview` |
 | `LABOR_LAW_CHECK` | `auto` (افتراضي) أو `always` أو `off` |
 | `DATA_DIR` | مجلد قاعدة البيانات والصور، افتراضياً `./data` وفي Docker `/data` |
@@ -75,7 +75,7 @@ npm run dev               # http://localhost:3000
 
 - **نصوصك أنت** هي المرجع الأول للصوت: يُحلَّل منها حتى 60 نصاً ممثلاً (الأحدث وتوزيع من الأقدم) في كتلة مخزنة بالكاش، ثم **التعديل اليدوي** قبل الإعجاب: تُحفظ النسختان ويقارنهما التعلم.
 - **الكتابة البشرية**: تعليمات صريحة ضد العبارات الجاهزة والقوالب والحماس المصطنع، مع 9 أشكال (قصة، رأي مخالف، ملاحظة، اعتراف بخطأ...) ينوّع بينها.
-- **الصور**: الإخراج الفني (عنوان عربي + وصف لكل نمط) من Claude، ثم 4 صور متوازية من Gemini. الإعجاب أو الرفض يُحلَّل بالرؤية ويتحول لقاعدة ستايل.
+- **الصور**: الإخراج الفني (عنوان عربي + وصف لكل نمط) من نموذج النص، ثم 4 صور متوازية من Gemini. الإعجاب أو الرفض يُحلَّل بالرؤية ويتحول لقاعدة ستايل.
 - **الأنماط** تُرتَّب حسب ما تختاره فعلاً بعد 6 اختيارات.
 
 ## النشر على السيرفر

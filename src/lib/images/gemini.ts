@@ -1,16 +1,8 @@
 import 'server-only';
 import zlib from 'node:zlib';
-import { GoogleGenAI } from '@google/genai';
-import { getEnv, requireGeminiKey, ConfigError } from '@/lib/env';
+import { getEnv, ConfigError } from '@/lib/env';
 import { logEvent } from '@/lib/db/repo';
-import { AIError } from '@/lib/ai/anthropic';
-
-let client: GoogleGenAI | null = null;
-
-function getClient(): GoogleGenAI {
-  if (!client) client = new GoogleGenAI({ apiKey: requireGeminiKey(), httpOptions: { timeout: 180_000 } });
-  return client;
-}
+import { AIError, getGeminiClient, statusOf } from '@/lib/ai/gemini';
 
 export interface GenerateImageInput {
   prompt: string;
@@ -41,12 +33,13 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
     const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [{ text: input.prompt }];
     if (input.input) parts.push({ inlineData: { data: input.input.base64, mimeType: input.input.mime } });
 
-    const res = await getClient().models.generateContent({
+    const res = await getGeminiClient().models.generateContent({
       model: env.GEMINI_IMAGE_MODEL,
       contents: [{ role: 'user', parts }],
       config: {
         responseModalities: ['IMAGE', 'TEXT'],
         imageConfig: { aspectRatio: '1:1', imageSize: '1K' },
+        httpOptions: { timeout: 180_000 },
       },
     });
 
@@ -75,9 +68,12 @@ export async function generateImage(input: GenerateImageInput): Promise<Generate
 
 function describeGeminiError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/API key not valid|API_KEY_INVALID|401|403/i.test(msg)) return 'مفتاح GEMINI_API_KEY غير صالح أو غير مفعّل لهذا النموذج';
-  if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) return 'تجاوزنا حصة Gemini، حاول بعد قليل';
-  if (/404|not found/i.test(msg)) return `نموذج الصور ${getEnv().GEMINI_IMAGE_MODEL} غير متاح لحسابك`;
+  const status = statusOf(err);
+  if (status === 401 || status === 403 || /API key not valid|API_KEY_INVALID/i.test(msg)) return 'مفتاح Gemini غير صالح أو غير مفعّل لهذا النموذج';
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(msg))
+    return 'حصة الصور غير متاحة: توليد الصور يتطلب تفعيل الفوترة في مشروع Google المرتبط بالمفتاح (aistudio.google.com ← Billing)، أو انتظر دقيقة إن كانت الحصة مفعّلة';
+  if (status === 404 || /not found/i.test(msg)) return `نموذج الصور ${getEnv().GEMINI_IMAGE_MODEL} غير متاح لحسابك`;
+  if (status === 503) return 'Gemini تحت ضغط عالٍ الآن، حاول بعد قليل';
   return `خطأ من Gemini: ${msg.slice(0, 300)}`;
 }
 

@@ -1,6 +1,6 @@
 import 'server-only';
 import { getSpec, latestProfile, ruleTexts } from '@/lib/db/repo';
-import { structuredCall } from './anthropic';
+import { structuredCall } from './gemini';
 import { EditSchema } from './schemas';
 import { buildEditSystem } from './prompts';
 

@@ -2,7 +2,7 @@ import type { Post, StyleProfile, StyleProfileData } from '@/lib/types';
 import type { DislikedWithReason } from '@/lib/db/repo';
 import { keywords, overlap, normalizeText } from '@/lib/text';
 import { FORMATS } from './schemas';
-import { systemText, type SystemBlock } from './anthropic';
+import { systemText, type SystemBlock } from './gemini';
 
 /** عرض ملف الأسلوب كـ Markdown ثابت الترتيب (كي يُخزَّن في الكاش) */
 export function renderProfileMarkdown(d: StyleProfileData): string {
