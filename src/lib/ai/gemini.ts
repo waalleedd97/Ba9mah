@@ -85,6 +85,7 @@ export function statusOf(err: unknown): number | null {
 
 export function describeAIError(err: unknown, model?: string): string {
   if (err instanceof AIError || err instanceof ConfigError) return err.message;
+  if (isAbortError(err)) return `انتهت مهلة الاتصال بـ Gemini${model ? ` (${model})` : ''}، حاول مرة أخرى بعد قليل`;
   const status = statusOf(err);
   const msg = err instanceof Error ? err.message : String(err);
   if (status === 401 || status === 403 || /API key not valid|API_KEY_INVALID/i.test(msg)) return 'مفتاح Gemini غير صالح أو غير مفعّل';
@@ -131,6 +132,16 @@ function extractJson(text: string): string {
   return fenced ? fenced[1] : t;
 }
 
+/** مهلة المحاولة الواحدة داخل الـ SDK (ميلي ثانية) */
+const ATTEMPT_TIMEOUT_MS = 100 * 1000;
+/** سقف زمني إجمالي لكل نموذج شاملاً إعادة المحاولات؛ بعده نلغي النداء وننتقل للنموذج البديل */
+export const MODEL_DEADLINE_MS = 150 * 1000;
+
+/** إلغاء بسبب المهلة (AbortSignal.timeout يرمي TimeoutError، والإلغاء اليدوي AbortError) */
+export function isAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
+}
+
 interface RawCall {
   model: string;
   systemInstruction: string;
@@ -138,6 +149,7 @@ interface RawCall {
   jsonSchema: unknown;
   maxOutputTokens: number;
   effort: Effort;
+  signal: AbortSignal;
 }
 
 async function rawGenerate(c: RawCall): Promise<GenerateContentResponse> {
@@ -149,10 +161,13 @@ async function rawGenerate(c: RawCall): Promise<GenerateContentResponse> {
       responseMimeType: 'application/json',
       responseJsonSchema: c.jsonSchema,
       maxOutputTokens: c.maxOutputTokens,
+      // السقف الإجمالي للنموذج: يوقف المحاولة الجارية ويمنع أي إعادة محاولة بعده
+      abortSignal: c.signal,
       httpOptions: {
-        // نداء نص عالق لأكثر من دقيقتين يُعتبر فاشلاً وننتقل للنموذج البديل
-        timeout: 2 * 60 * 1000,
-        retryOptions: { attempts: 3, initialDelay: 1000, maxDelay: 6000, httpStatusCodes: [408, 500, 502, 503, 504] },
+        timeout: ATTEMPT_TIMEOUT_MS,
+        // تنبيه: initialDelay و maxDelay هنا بالثواني لا بالميلي ثانية.
+        // تمرير 1000 و6000 كان يعني انتظار 16 إلى 100 دقيقة بين المحاولات عند أي 503 عابر.
+        retryOptions: { attempts: 3, initialDelay: 1, maxDelay: 6, httpStatusCodes: [408, 500, 502, 503, 504] },
       },
     },
   };
@@ -195,8 +210,9 @@ export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOp
     if ((unavailableUntil.get(model) ?? 0) > Date.now()) continue;
     lastModel = model;
     const started = Date.now();
+    const signal = AbortSignal.timeout(MODEL_DEADLINE_MS);
     try {
-      const res = await rawGenerate({ model, systemInstruction, parts, jsonSchema, maxOutputTokens, effort });
+      const res = await rawGenerate({ model, systemInstruction, parts, jsonSchema, maxOutputTokens, effort, signal });
       const usage = usageOf(res);
       const durationMs = Date.now() - started;
       const cand = res.candidates?.[0];
@@ -227,12 +243,13 @@ export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOp
     } catch (err) {
       if (err instanceof AIError) throw err;
       const status = statusOf(err);
-      const note = describeAIError(err, model);
+      const timedOut = signal.aborted || isAbortError(err);
+      const note = timedOut ? `تجاوز النموذج ${model} السقف الزمني (${Math.round(MODEL_DEADLINE_MS / 1000)} ثانية)` : describeAIError(err, model);
       logEvent({ kind: opts.kind, model, durationMs: Date.now() - started, ok: false, note });
       console.warn(`[gemini] ${opts.kind} failed model=${model} status=${status ?? '?'} ${((Date.now() - started) / 1000).toFixed(1)}s: ${note}`);
       if (err instanceof ConfigError) throw new AIError(err.message, 'config');
       if (status === 401 || status === 403) throw new AIError(note, 'auth');
-      if (status === 404 || status === 429 || status === 500 || status === 503) {
+      if (timedOut || status === 404 || status === 429 || status === 500 || status === 503) {
         unavailableUntil.set(model, Date.now() + COOLDOWN_MS);
         lastErr = err;
         continue;

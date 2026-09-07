@@ -95,12 +95,28 @@ export function parseCsv(input: string): string[][] {
 
 const SEP_LINE = /^[ \t]*(?:-{3,}|\*{3,}|={3,}|_{3,}|#{3,}|•{3,}|~{3,})[ \t]*$/m;
 
+/** قطعة تبدأ بشَرطة قائمة أو منشن أو علامة تعداد: تكملة للبوست السابق لا بوست مستقل */
+const LIST_FRAGMENT = /^(?:[-•*▪◦]\s|@[A-Za-z0-9_]{2,}|[✅✔☑️➡️👈👉]|\d+[.)-]\s|[١-٩][.)-]\s)/u;
+
+/**
+ * يضم القطع التي هي تكملة قائمة إلى البوست السابق. بوست فيه قائمة مفصولة بأسطر فارغة
+ * (مثل قائمة حاضنات ومسرعات بمنشن لكل واحدة) كان يتحول إلى عشرة "بوستات" من سطرين.
+ */
+function mergeListFragments(parts: string[]): string[] {
+  const out: string[] = [];
+  for (const p of parts) {
+    if (out.length && LIST_FRAGMENT.test(p)) out[out.length - 1] += `\n\n${p}`;
+    else out.push(p);
+  }
+  return out;
+}
+
 /** يقسم نصاً طويلاً إلى بوستات: بسطر فاصل (--- أو ***) أو بسطرين فارغين متتاليين */
 export function splitPosts(input: string): string[] {
   const text = input.replace(/\r\n?/g, '\n');
   let parts: string[];
   if (SEP_LINE.test(text)) parts = text.split(new RegExp(SEP_LINE.source, 'm'));
-  else if (/\n[ \t]*\n[ \t]*\n/.test(text)) parts = text.split(/\n[ \t]*\n(?:[ \t]*\n)+/);
+  else if (/\n[ \t]*\n[ \t]*\n/.test(text)) parts = mergeListFragments(text.split(/\n[ \t]*\n(?:[ \t]*\n)+/).map((p) => p.trim()).filter(Boolean));
   else parts = [text];
   return parts.map((p) => p.trim()).filter((p) => p.length >= 20);
 }
