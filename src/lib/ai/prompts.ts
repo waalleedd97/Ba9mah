@@ -112,6 +112,7 @@ const STATIC_GENERATION_RULES = `أنت تكتب بوستات LinkedIn نياب�
 - خاتمة طبيعية: استنتاج، أو جملة تبقى في الذهن، أو سؤال حقيقي يهم الكاتب فعلاً. ليس كل بوست ينتهي بسؤال.
 - اللهجة السعودية البيضاء افتراضاً ما لم تنص قواعد المستخدم على غيرها. المصطلحات الإنجليزية الشائعة في المجال تُكتب كما تُقال.
 - الطول يتبع عادة المستخدم لا الحد الأقصى: إذا كانت أغلب نصوصه ثلاثة أسطر فلا تكتب اثني عشر. نصوصه وملف أسلوبه هما المقياس.
+- الشكل البصري يتبع نصوص المستخدم أيضاً: إذا كان يكتب أسطراً قصيرة مفصولة بسطر فارغ فافعل مثله. الفقرة الواحدة المتصلة من ثلاث جمل فأكثر تفضح الكتابة الآلية عنده.
 - الرسم الإملائي جزء من الصوت: اكتب الهمزات والتنوين وعلامات الترقيم كما يكتبها المستخدم في نصوصه، ولا تصحح له.
 
 ممنوعات لأنها تفضح الكتابة الآلية:
@@ -162,6 +163,8 @@ export interface GenerationUserInput {
   recentTopics: string[];
   exploratory: number;
   roundNumber: number;
+  /** إحصاءات نصوص المستخدم نفسه (إن كانت كافية) لفرض شكله البصري وطوله */
+  layout?: CorpusStats | null;
 }
 
 export function buildGenerationUser(input: GenerationUserInput): string {
@@ -201,10 +204,11 @@ export function buildGenerationUser(input: GenerationUserInput): string {
     ? `اكتب 4 بوستات LinkedIn عن الموضوع التالي: "${input.topic}"\nكل بوست يتناول زاوية مختلفة تماماً من نفس الموضوع.`
     : `اكتب 4 بوستات LinkedIn جديدة، كل واحد عن موضوع مختلف يهم جمهور التخصص، بمواضيع جديدة ومفيدة وغير مستهلكة.`;
 
+  const layout = input.layout && input.layout.count >= 5 ? `\nالشكل البصري كما في نصوص المستخدم: ${describeLayout(input.layout)}. لا تكتب فقرة واحدة متصلة.` : '';
   sections.push(
     `=== المطلوب (الجولة ${input.roundNumber}) ===\n${task}\n` +
       `التوزيع: ${committed} بوست ملتزم بملف الأسلوب، و${input.exploratory} بوست استكشافي (علّمه exploratory=true).\n` +
-      `نوّع الأشكال: لا يتكرر الشكل بين البوستات الأربعة، ولا يتكرر نوع الخاتمة.`,
+      `نوّع الأشكال: لا يتكرر الشكل بين البوستات الأربعة، ولا يتكرر نوع الخاتمة.${layout}`,
   );
 
   return sections.join('\n\n');
@@ -243,6 +247,10 @@ export interface CorpusStats {
   bulletShare: number;
   linkShare: number;
   questionEndShare: number;
+  /** الوسيط لطول السطر الواحد غير الفارغ بالأحرف */
+  medianLineChars: number;
+  /** نصوص متعددة الأسطر تفصل بين أسطرها بسطر فارغ */
+  blankSepShare: number;
   /** كلمات شائعة كُتبت بهمزة في أولها (أن، إذا، أكثر...) مقابل كتابتها بألف مجردة (ان، اذا، اكثر...) */
   hamzaWords: number;
   bareAlefWords: number;
@@ -282,6 +290,7 @@ export function corpusStats(posts: Post[]): CorpusStats {
       else if (BARE_FORMS.has(bare)) bareAlefWords++;
     }
   }
+  const multi = texts.filter((t) => nonEmptyLines(t) >= 2);
   return {
     count: n,
     medianChars: median(texts.map((t) => t.length)),
@@ -292,9 +301,17 @@ export function corpusStats(posts: Post[]): CorpusStats {
     bulletShare: share((t) => BULLET_LINE_RE.test(t)),
     linkShare: share((t) => LINK_RE.test(t)),
     questionEndShare: share((t) => /[؟?]\s*$/.test(t.trim())),
+    medianLineChars: median(texts.flatMap((t) => t.split('\n').filter((l) => l.trim()).map((l) => l.trim().length))),
+    blankSepShare: multi.length ? multi.filter((t) => /\n[ \t]*\n/.test(t)).length / multi.length : 0,
     hamzaWords,
     bareAlefWords,
   };
+}
+
+/** وصف الشكل البصري المعتاد للمستخدم في جملة يفهمها الكاتب */
+export function describeLayout(s: CorpusStats): string {
+  const sep = s.blankSepShare >= 0.5 ? 'مع سطر فارغ بين الأسطر' : 'بلا أسطر فارغة غالباً';
+  return `سطر قصير لكل جملة أو فكرة (الوسيط ${s.medianLineChars} حرفاً للسطر) ${sep}، والبوست كله قرابة ${s.medianLines} أسطر ما لم يستدعِ الشكل أكثر`;
 }
 
 export function renderCorpusStats(s: CorpusStats): string {
@@ -304,6 +321,7 @@ export function renderCorpusStats(s: CorpusStats): string {
     `- عدد النصوص: ${s.count}`,
     `- الطول الوسيط: ${s.medianChars} حرفاً في ${s.medianLines} أسطر غير فارغة`,
     `- نصوص من 3 أسطر أو أقل: ${pct(s.shortShare)} | نصوص من 10 أسطر فأكثر: ${pct(s.longShare)}`,
+    `- الشكل البصري: الوسيط لطول السطر الواحد ${s.medianLineChars} حرفاً | نصوص تفصل بين أسطرها بسطر فارغ: ${pct(s.blankSepShare)}`,
     `- فيها إيموجي: ${pct(s.emojiShare)} | فيها قوائم نقطية أو مرقمة: ${pct(s.bulletShare)} | فيها رابط أو منشن: ${pct(s.linkShare)} | تنتهي بسؤال: ${pct(s.questionEndShare)}`,
     `- الهمزة في أول الكلمة (أن، إذا، أكثر...): ${s.hamzaWords} مرة بالهمزة مقابل ${s.bareAlefWords} مرة بألف مجردة (ان، اذا، اكثر)`,
   ].join('\n');
