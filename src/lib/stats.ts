@@ -1,18 +1,20 @@
 import 'server-only';
-import { countByRating, countRounds, countRules, countSaved, getSpec, isOnboarded, latestProfile } from '@/lib/db/repo';
+import { countByKind, countRatedNotOwn, countRounds, countRules, countSaved, getSpec, isOnboarded, latestProfile } from '@/lib/db/repo';
 import { explorationCount } from '@/lib/ai/prompts';
 import { ratingsSinceProfile } from '@/lib/ai/learn';
 import type { AppStats } from '@/lib/types';
 
 export function getAppStats(): AppStats {
-  const liked = countByRating('liked');
+  const liked = countRatedNotOwn('liked');
+  const own = countByKind('own');
   const rounds = countRounds();
   const profile = latestProfile();
   return {
     spec: getSpec(),
     onboarded: isOnboarded(),
     liked,
-    disliked: countByRating('disliked'),
+    own,
+    disliked: countRatedNotOwn('disliked'),
     rounds,
     goldenRules: countRules('golden'),
     avoidRules: countRules('avoid'),
@@ -20,7 +22,7 @@ export function getAppStats(): AppStats {
     saved: countSaved(),
     profileVersion: profile?.version ?? null,
     profileConfidence: profile?.data.confidence ?? null,
-    exploratoryNext: explorationCount(liked, rounds),
+    exploratoryNext: explorationCount(liked + own, rounds),
     ratingsSinceProfile: ratingsSinceProfile(),
   };
 }

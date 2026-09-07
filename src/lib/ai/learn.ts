@@ -44,7 +44,7 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
       const spec = getSpec();
       const own = listOwnPostsSample(OWN_SAMPLE_MAX);
       const likedOther = listLikedNonOwn(20);
-      const totalLiked = own.total + countByRating('liked') - own.total; // المعجَب به كله
+      const totalLiked = countByRating('liked'); // نصوصك (مسجّلة كمعجَب بها) + ما أعجبك من المولَّد والمرجعي
       const minLiked = opts?.force ? 1 : MIN_LIKED_FOR_PROFILE;
       if (!spec || totalLiked < minLiked) return null;
       const disliked = listDislikedWithReasons(20);

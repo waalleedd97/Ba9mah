@@ -122,6 +122,12 @@ export function countByRating(rating: Rating): number {
   return r.c;
 }
 
+/** المعجَب به / المرفوض من البوستات المولّدة والمرجعية — نصوصك أنت ليست "بوستات أعجبتك" */
+export function countRatedNotOwn(rating: Rating): number {
+  const r = getDb().prepare(`SELECT COUNT(*) AS c FROM posts WHERE rating = ? AND kind <> 'own'`).get(rating) as { c: number };
+  return r.c;
+}
+
 export function countRatedSince(ts: number): number {
   const r = getDb()
     .prepare(`SELECT COUNT(*) AS c FROM posts WHERE rating IS NOT NULL AND kind <> 'seed' AND rated_at > ?`)

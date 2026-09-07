@@ -118,6 +118,8 @@ export interface AppStats {
   onboarded: boolean;
   liked: number;
   disliked: number;
+  /** نصوص كتبها المستخدم بنفسه */
+  own: number;
   rounds: number;
   goldenRules: number;
   avoidRules: number;

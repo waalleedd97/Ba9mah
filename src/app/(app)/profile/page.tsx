@@ -43,7 +43,7 @@ export default function ProfilePage() {
           <h1>ما تعلّمه بصمة عنك</h1>
           <p>يُستخلص من جديد بعد كل {MIN_NEW_RATINGS} تقييمات، ويقود كل جولة قادمة</p>
         </div>
-        {learning ? <Pill tone="violet" icon="brain">يحلل أسلوبك الآن</Pill> : <RelearnButton disabled={stats.liked < 3} label={profile ? 'أعد الاستخلاص الآن' : 'استخلص ملف أسلوبي'} />}
+        {learning ? <Pill tone="violet" icon="brain">يحلل أسلوبك الآن</Pill> : <RelearnButton disabled={stats.liked < 3 && stats.own === 0} label={profile ? 'أعد الاستخلاص الآن' : 'استخلص ملف أسلوبي'} />}
       </div>
 
       <div className="grid-4 mb-3 fade-up">

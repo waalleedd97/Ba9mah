@@ -24,8 +24,12 @@ export default function SettingsPage() {
 
       {env.mockAi && (
         <div className="card mb-2 fade-up" style={{ borderColor: 'var(--warn)' }}>
-          <b style={{ color: 'var(--warn)' }}>وضع الاختبار مفعّل</b>
-          <p className="subtle">البوستات والصور وهمية لأن مفاتيح Anthropic و Gemini غير مضبوطة بعد. أضفها ثم أعد تشغيل سكربت النشر.</p>
+          <b style={{ color: 'var(--warn)' }}>وضع الاختبار مفعّل: البوستات والصور وهمية</b>
+          <p className="subtle" style={{ marginTop: 6 }}>مفتاح Claude غير مضبوط بعد. أنشئ مفتاحاً من console.anthropic.com ثم نفّذ هذا الأمر على السيرفر عبر SSH (يحافظ على بياناتك):</p>
+          <code className="kbd" style={{ display: 'block', direction: 'ltr', textAlign: 'left', whiteSpace: 'pre-wrap', padding: '10px 12px', marginTop: 8 }}>
+            sudo bash /opt/basma/scripts/deploy-hetzner.sh --anthropic-key sk-ant-...
+          </code>
+          <p className="subtle" style={{ marginTop: 8 }}>مفتاح Gemini (من aistudio.google.com/apikey) اختياري وتضيفه بنفس الأمر مع <span className="kbd">--gemini-key AIza...</span>؛ بدونه تعمل الكتابة كاملة ويتوقف توليد الصور فقط.</p>
         </div>
       )}
 
