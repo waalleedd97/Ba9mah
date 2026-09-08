@@ -1,5 +1,5 @@
 import { getDb, now } from '../index';
-import type { Round, RoundStatus } from '@/lib/types';
+import type { NewsBrief, Round, RoundStatus } from '@/lib/types';
 
 interface RoundRow {
   id: number;
@@ -10,8 +10,18 @@ interface RoundRow {
   input_tokens: number | null;
   cached_tokens: number | null;
   output_tokens: number | null;
+  news_json: string | null;
   created_at: number;
   completed_at: number | null;
+}
+
+function parseNews(json: string | null): NewsBrief | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as NewsBrief;
+  } catch {
+    return null;
+  }
 }
 
 function rowToRound(r: RoundRow): Round {
@@ -20,6 +30,7 @@ function rowToRound(r: RoundRow): Round {
     topic: r.topic,
     exploratory: r.exploratory,
     status: r.status,
+    news: parseNews(r.news_json),
     createdAt: r.created_at,
     completedAt: r.completed_at,
   };
@@ -30,11 +41,12 @@ export function createRound(input: {
   exploratory: number;
   model: string;
   usage?: { input: number; cached: number; output: number };
+  news?: NewsBrief | null;
 }): Round {
   const res = getDb()
     .prepare(
-      `INSERT INTO rounds (topic, exploratory, status, model, input_tokens, cached_tokens, output_tokens, created_at)
-       VALUES (?, ?, 'rating', ?, ?, ?, ?, ?)`,
+      `INSERT INTO rounds (topic, exploratory, status, model, input_tokens, cached_tokens, output_tokens, news_json, created_at)
+       VALUES (?, ?, 'rating', ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.topic,
@@ -43,6 +55,7 @@ export function createRound(input: {
       input.usage?.input ?? null,
       input.usage?.cached ?? null,
       input.usage?.output ?? null,
+      input.news ? JSON.stringify(input.news) : null,
       now(),
     );
   return getRound(Number(res.lastInsertRowid))!;

@@ -115,6 +115,30 @@ export interface StructuredResult<T> {
   model: string;
 }
 
+export interface TextCallOptions {
+  kind: string;
+  system: string | SystemBlock[];
+  user: string | UserBlock[];
+  effort?: Effort;
+  maxTokens?: number;
+  /** تفعيل البحث في Google (grounding). غير متاح على الحصة المجانية: يرجع 429 فيتعامل معه المستدعي */
+  search?: boolean;
+  mockHint?: string;
+}
+
+export interface NewsSource {
+  title: string;
+  url: string;
+}
+
+export interface TextResult {
+  text: string;
+  /** مصادر البحث عندما يكون search مفعّلاً وأجاب النموذج بمصادر */
+  sources: NewsSource[];
+  usage: UsageInfo;
+  model: string;
+}
+
 const REFUSAL_REASONS = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY']);
 
 function usageOf(res: GenerateContentResponse): UsageInfo {
@@ -130,6 +154,20 @@ function extractJson(text: string): string {
   const t = text.trim();
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(t);
   return fenced ? fenced[1] : t;
+}
+
+/** مصادر البحث من بيانات grounding في الرد (روابط إعادة توجيه من Google مع عنوان الموقع) */
+function groundingSources(res: GenerateContentResponse): NewsSource[] {
+  const chunks = res.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+  const out: NewsSource[] = [];
+  const seen = new Set<string>();
+  for (const c of chunks) {
+    const uri = c.web?.uri;
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    out.push({ title: c.web?.title || uri, url: uri });
+  }
+  return out.slice(0, 8);
 }
 
 /**
@@ -149,32 +187,35 @@ interface RawCall {
   model: string;
   systemInstruction: string;
   parts: Part[];
-  jsonSchema: unknown;
+  /** عند وجوده يُطلب JSON مطابق له، وإلا نص حر */
+  jsonSchema?: unknown;
   maxOutputTokens: number;
   effort: Effort;
   signal: AbortSignal;
+  /** أداة البحث في Google */
+  search?: boolean;
 }
 
 async function rawGenerate(c: RawCall): Promise<GenerateContentResponse> {
-  const base = {
-    model: c.model,
-    contents: [{ role: 'user' as const, parts: c.parts }],
-    config: {
-      systemInstruction: c.systemInstruction,
-      responseMimeType: 'application/json',
-      responseJsonSchema: c.jsonSchema,
-      maxOutputTokens: c.maxOutputTokens,
-      // السقف الإجمالي للنموذج: يوقف المحاولة الجارية ويمنع أي إعادة محاولة بعده
-      abortSignal: c.signal,
-      httpOptions: {
-        timeout: ATTEMPT_TIMEOUT_MS,
-        // تنبيه: initialDelay و maxDelay هنا بالثواني لا بالميلي ثانية.
-        // تمرير 1000 و6000 كان يعني انتظار 16 إلى 100 دقيقة بين المحاولات عند أي 503 عابر.
-        // محاولة إعادة واحدة تكفي: البدائل في السلسلة أسرع من تكرار الطرق على نموذج مزدحم.
-        retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 6, httpStatusCodes: [408, 500, 502, 503, 504] },
-      },
+  const config: Record<string, unknown> = {
+    systemInstruction: c.systemInstruction,
+    maxOutputTokens: c.maxOutputTokens,
+    // السقف الإجمالي للنموذج: يوقف المحاولة الجارية ويمنع أي إعادة محاولة بعده
+    abortSignal: c.signal,
+    httpOptions: {
+      timeout: ATTEMPT_TIMEOUT_MS,
+      // تنبيه: initialDelay و maxDelay هنا بالثواني لا بالميلي ثانية.
+      // تمرير 1000 و6000 كان يعني انتظار 16 إلى 100 دقيقة بين المحاولات عند أي 503 عابر.
+      // محاولة إعادة واحدة تكفي: البدائل في السلسلة أسرع من تكرار الطرق على نموذج مزدحم.
+      retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 6, httpStatusCodes: [408, 500, 502, 503, 504] },
     },
   };
+  if (c.jsonSchema) {
+    config.responseMimeType = 'application/json';
+    config.responseJsonSchema = c.jsonSchema;
+  }
+  if (c.search) config.tools = [{ googleSearch: {} }];
+  const base = { model: c.model, contents: [{ role: 'user' as const, parts: c.parts }], config };
   try {
     return await getGeminiClient().models.generateContent({
       ...base,
@@ -187,27 +228,26 @@ async function rawGenerate(c: RawCall): Promise<GenerateContentResponse> {
   }
 }
 
+interface ChainOptions<T> {
+  kind: string;
+  /** نداء واحد لنموذج معيّن */
+  exec: (model: string, signal: AbortSignal) => Promise<GenerateContentResponse>;
+  /** تحويل نص الرد إلى النتيجة؛ أي استثناء هنا يُعامل كرد غير مقروء */
+  parse: (text: string, res: GenerateContentResponse) => T;
+  /**
+   * هل يُستبعد النموذج خمس دقائق عند فشله؟ افتراضياً نعم.
+   * نداءات البحث تفشل بـ 429 على الحصة المجانية بسبب الأداة لا النموذج، فلا تُسمّم السلسلة.
+   */
+  cooldownOnFail?: boolean;
+}
+
 /**
- * نداء واحد لـ Gemini بمخرجات منظّمة (JSON مطابق للـ schema).
- * - التفكير يُضبط بمستوى effort لكل مسار.
- * - عند 503/429/404 ينتقل تلقائياً للنموذج البديل التالي في السلسلة.
+ * يجرّب النماذج بالترتيب: الأساسي ثم البدائل.
+ * - عند 503/429/404/500 أو تجاوز المهلة ينتقل للنموذج التالي.
+ * - الرفض الأمني والرد غير المقروء يُرفعان فوراً دون انتقال.
  */
-export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOptions<S>): Promise<StructuredResult<z.infer<S>>> {
+async function runOnChain<T>(opts: ChainOptions<T>): Promise<StructuredResult<T>> {
   const env = getEnv();
-
-  if (env.mockAi) {
-    const data = opts.schema.parse(mockFor(opts.kind, opts.mockHint)) as z.infer<S>;
-    logEvent({ kind: opts.kind, model: 'mock', usage: { input: 0, cached: 0, output: 0 }, durationMs: 0 });
-    return { data, usage: { input: 0, cached: 0, output: 0 }, model: 'mock' };
-  }
-
-  const systemInstruction = typeof opts.system === 'string' ? opts.system : opts.system.map((b) => b.text).join('\n\n');
-  const parts: Part[] = typeof opts.user === 'string' ? [{ text: opts.user }] : opts.user;
-  const jsonSchema = toJsonSchema(opts.schema);
-  // توكنات التفكير تُحسب ضمن حد الإخراج → هامش إضافي
-  const maxOutputTokens = Math.min(65536, (opts.maxTokens ?? 16000) + 8192);
-  const effort = opts.effort ?? 'high';
-
   let lastErr: unknown = null;
   let lastModel = env.GEMINI_TEXT_MODEL;
   for (const model of textModelChain()) {
@@ -216,7 +256,7 @@ export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOp
     const started = Date.now();
     const signal = AbortSignal.timeout(MODEL_DEADLINE_MS);
     try {
-      const res = await rawGenerate({ model, systemInstruction, parts, jsonSchema, maxOutputTokens, effort, signal });
+      const res = await opts.exec(model, signal);
       const usage = usageOf(res);
       const durationMs = Date.now() - started;
       const cand = res.candidates?.[0];
@@ -234,9 +274,9 @@ export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOp
         logEvent({ kind: opts.kind, model, usage, durationMs, ok: false, note: 'max_tokens' });
         throw new AIError('الرد أطول من الحد المسموح، حاول مرة أخرى', 'parse');
       }
-      let data: z.infer<S>;
+      let data: T;
       try {
-        data = opts.schema.parse(JSON.parse(extractJson(text))) as z.infer<S>;
+        data = opts.parse(text, res);
       } catch {
         logEvent({ kind: opts.kind, model, usage, durationMs, ok: false, note: `parse_failed:${text.slice(0, 120)}` });
         throw new AIError('تعذر قراءة رد النموذج', 'parse');
@@ -254,7 +294,7 @@ export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOp
       if (err instanceof ConfigError) throw new AIError(err.message, 'config');
       if (status === 401 || status === 403) throw new AIError(note, 'auth');
       if (timedOut || status === 404 || status === 429 || status === 500 || status === 503) {
-        unavailableUntil.set(model, Date.now() + COOLDOWN_MS);
+        if (opts.cooldownOnFail !== false) unavailableUntil.set(model, Date.now() + COOLDOWN_MS);
         lastErr = err;
         continue;
       }
@@ -263,4 +303,63 @@ export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOp
   }
   const status = statusOf(lastErr);
   throw new AIError(lastErr ? describeAIError(lastErr, lastModel) : 'لا يوجد نموذج نص متاح الآن، حاول بعد دقيقة', status === 429 ? 'ratelimit' : 'unavailable');
+}
+
+function systemOf(system: string | SystemBlock[]): string {
+  return typeof system === 'string' ? system : system.map((b) => b.text).join('\n\n');
+}
+function partsOf(user: string | UserBlock[]): Part[] {
+  return typeof user === 'string' ? [{ text: user }] : user;
+}
+
+/**
+ * نداء واحد لـ Gemini بمخرجات منظّمة (JSON مطابق للـ schema).
+ * - التفكير يُضبط بمستوى effort لكل مسار.
+ * - عند 503/429/404 ينتقل تلقائياً للنموذج البديل التالي في السلسلة.
+ */
+export async function structuredCall<S extends z.ZodType>(opts: StructuredCallOptions<S>): Promise<StructuredResult<z.infer<S>>> {
+  const env = getEnv();
+
+  if (env.mockAi) {
+    const data = opts.schema.parse(mockFor(opts.kind, opts.mockHint)) as z.infer<S>;
+    logEvent({ kind: opts.kind, model: 'mock', usage: { input: 0, cached: 0, output: 0 }, durationMs: 0 });
+    return { data, usage: { input: 0, cached: 0, output: 0 }, model: 'mock' };
+  }
+
+  const systemInstruction = systemOf(opts.system);
+  const parts = partsOf(opts.user);
+  const jsonSchema = toJsonSchema(opts.schema);
+  // توكنات التفكير تُحسب ضمن حد الإخراج → هامش إضافي
+  const maxOutputTokens = Math.min(65536, (opts.maxTokens ?? 16000) + 8192);
+  const effort = opts.effort ?? 'high';
+
+  return runOnChain<z.infer<S>>({
+    kind: opts.kind,
+    exec: (model, signal) => rawGenerate({ model, systemInstruction, parts, jsonSchema, maxOutputTokens, effort, signal }),
+    parse: (text) => opts.schema.parse(JSON.parse(extractJson(text))) as z.infer<S>,
+  });
+}
+
+/**
+ * نداء نص حر (بلا schema)، مع خيار البحث في Google.
+ * يُستخدم لبحث الأخبار: أدوات البحث لا تعمل مع مخرجات JSON المنظّمة، فنقرأ النص ثم نمرره للتوليد المنظّم.
+ */
+export async function textCall(opts: TextCallOptions): Promise<TextResult> {
+  const env = getEnv();
+  if (env.mockAi) {
+    const text = String(mockFor(opts.kind, opts.mockHint) ?? '');
+    logEvent({ kind: opts.kind, model: 'mock', usage: { input: 0, cached: 0, output: 0 }, durationMs: 0 });
+    return { text, sources: [], usage: { input: 0, cached: 0, output: 0 }, model: 'mock' };
+  }
+  const systemInstruction = systemOf(opts.system);
+  const parts = partsOf(opts.user);
+  const maxOutputTokens = Math.min(65536, (opts.maxTokens ?? 4000) + 8192);
+  const effort = opts.effort ?? 'medium';
+  const r = await runOnChain<{ text: string; sources: NewsSource[] }>({
+    kind: opts.kind,
+    exec: (model, signal) => rawGenerate({ model, systemInstruction, parts, maxOutputTokens, effort, signal, search: opts.search }),
+    parse: (text, res) => ({ text: text.trim(), sources: groundingSources(res) }),
+    cooldownOnFail: !opts.search,
+  });
+  return { text: r.data.text, sources: r.data.sources, usage: r.usage, model: r.model };
 }

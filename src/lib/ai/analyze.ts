@@ -10,23 +10,27 @@ import { DISLIKE_SYSTEM, buildDislikeUser } from './prompts';
 const MAX_LEARNED_AVOID = 15;
 const MAX_LEARNED_IMAGE = 12;
 
-/** بعد رفض بوست: تشخيص السبب وتحويله لقاعدة تجنب (يُستدعى بعد إرسال الرد) */
-export async function analyzeDislikedPost(postId: string, userReason?: string): Promise<void> {
+/**
+ * بعد رفض بوست: تشخيص السبب وتحويله لقواعد تجنب (يُستدعى بعد إرسال الرد).
+ * الأسباب التي اختارها المستخدم (قد تكون عدة) تُترجم كل واحدة إلى قاعدة مستقلة.
+ */
+export async function analyzeDislikedPost(postId: string, userReasons: string[] = []): Promise<void> {
   const post = getPost(postId);
   if (!post) return;
+  const reasons = userReasons.map((r) => r.trim()).filter(Boolean);
   try {
     const profile = latestProfile();
     const { data } = await structuredCall({
       kind: 'analyze_dislike',
       schema: DislikeAnalysisSchema,
       system: [systemText(DISLIKE_SYSTEM)],
-      user: buildDislikeUser(post, profile?.data.summary ?? null, ruleTexts('avoid'), userReason),
+      user: buildDislikeUser(post, profile?.data.summary ?? null, ruleTexts('avoid'), reasons),
       effort: 'medium',
       maxTokens: 2000,
     });
-    if (!userReason) addDislikeReason(post.id, data.reason, data.category);
-    if ((userReason || data.confidence !== 'low') && data.avoid_rule.trim()) {
-      addRule('avoid', data.avoid_rule, 'learned');
+    if (reasons.length === 0) addDislikeReason(post.id, data.reason, data.category);
+    if (reasons.length > 0 || data.confidence !== 'low') {
+      for (const rule of data.avoid_rules.map((r) => r.trim()).filter(Boolean).slice(0, 3)) addRule('avoid', rule, 'learned');
       capLearnedRules('avoid', MAX_LEARNED_AVOID);
     }
   } catch (err) {

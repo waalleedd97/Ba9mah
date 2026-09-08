@@ -35,7 +35,9 @@ export function mockFor(kind: string, hint?: string): unknown {
         confidence: 'medium',
       };
     case 'analyze_dislike':
-      return { reason: 'نبرة وعظية وطول زائد', category: 'tone', avoid_rule: 'تجنب النبرة الوعظية والجمل الطويلة', confidence: 'medium' };
+      return { reason: 'نبرة وعظية وطول زائد', category: 'tone', avoid_rules: ['تجنب النبرة الوعظية والجمل الطويلة'], confidence: 'medium' };
+    case 'news_research':
+      return `العنوان: ${(hint ?? 'خبر تجريبي').split('\n')[0].slice(0, 80)}\n\nالملخص: هذا ملخص وهمي لخبر في وضع الاختبار. الحقائق: أُعلن الخبر اليوم، ويهم جمهور التقنية وريادة الأعمال.\n\nالمصادر: لا يوجد بحث في وضع الاختبار.`;
     case 'analyze_image_dislike':
       return { reason: 'نص كثير وصغير داخل الصورة', category: 'clutter', avoid_rule: 'تجنب النصوص الكثيرة الصغيرة داخل الصورة' };
     case 'analyze_image_like':

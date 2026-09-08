@@ -55,11 +55,22 @@ export interface Rule {
   createdAt: number;
 }
 
+/** ملخص خبر بحث عنه النظام (أو قرأه من رابط) قبل كتابة جولة عنه */
+export interface NewsBrief {
+  headline: string;
+  brief: string;
+  sources: Array<{ title: string; url: string }>;
+  /** هل استُخدم البحث في الويب فعلاً؟ (غير متاح على الحصة المجانية) */
+  searched: boolean;
+  note: string | null;
+}
+
 export interface Round {
   id: number;
   topic: string | null;
   exploratory: number;
   status: RoundStatus;
+  news: NewsBrief | null;
   createdAt: number;
   completedAt: number | null;
 }
