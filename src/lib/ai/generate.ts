@@ -14,7 +14,7 @@ import {
 import type { Post, Round } from '@/lib/types';
 import { AIError, structuredCall } from './gemini';
 import { GenerationSchema } from './schemas';
-import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, selectExamples } from './prompts';
+import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, selectExamples, shapeTargets } from './prompts';
 import { verifyIfNeeded } from './labor-law';
 
 export interface GeneratedRound {
@@ -47,6 +47,8 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
     exploratory,
     roundNumber: roundsSoFar + 1,
     layout: own.length >= 5 ? corpusStats(own) : null,
+    // شكل مستهدف لكل بوست من نصوص المستخدم نفسها، يتغير مع رقم الجولة
+    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4) : [],
   });
 
   const { data, usage, model } = await structuredCall({
