@@ -49,9 +49,9 @@ export function textModelChain(): string[] {
   return [...new Set(list)];
 }
 
-/** نموذج رُفض مؤقتاً (503/429/404) يُتخطى لدقيقتين بدل إعادة المحاولة في كل نداء */
+/** نموذج رُفض مؤقتاً (503/429/404 أو تجاوز المهلة) يُتخطى خمس دقائق بدل تكرار الانتظار في كل نداء */
 const unavailableUntil = new Map<string, number>();
-const COOLDOWN_MS = 2 * 60 * 1000;
+const COOLDOWN_MS = 5 * 60 * 1000;
 
 function thinkingLevel(effort: Effort): ThinkingLevel {
   if (effort === 'low') return ThinkingLevel.LOW;
@@ -132,10 +132,13 @@ function extractJson(text: string): string {
   return fenced ? fenced[1] : t;
 }
 
-/** مهلة المحاولة الواحدة داخل الـ SDK (ميلي ثانية) */
-const ATTEMPT_TIMEOUT_MS = 100 * 1000;
-/** سقف زمني إجمالي لكل نموذج شاملاً إعادة المحاولات؛ بعده نلغي النداء وننتقل للنموذج البديل */
-export const MODEL_DEADLINE_MS = 150 * 1000;
+/**
+ * مهلة المحاولة الواحدة داخل الـ SDK (ميلي ثانية). الرد الطبيعي للكتابة والتعلم 10 إلى 30 ثانية؛
+ * ما يتجاوز 45 ثانية يكون نموذجاً مزدحماً يُحسن تركه للبديل بدل الانتظار.
+ */
+const ATTEMPT_TIMEOUT_MS = 45 * 1000;
+/** سقف زمني إجمالي لكل نموذج شاملاً إعادة المحاولة؛ بعده نلغي النداء وننتقل للنموذج البديل */
+export const MODEL_DEADLINE_MS = 60 * 1000;
 
 /** إلغاء بسبب المهلة (AbortSignal.timeout يرمي TimeoutError، والإلغاء اليدوي AbortError) */
 export function isAbortError(err: unknown): boolean {
@@ -167,7 +170,8 @@ async function rawGenerate(c: RawCall): Promise<GenerateContentResponse> {
         timeout: ATTEMPT_TIMEOUT_MS,
         // تنبيه: initialDelay و maxDelay هنا بالثواني لا بالميلي ثانية.
         // تمرير 1000 و6000 كان يعني انتظار 16 إلى 100 دقيقة بين المحاولات عند أي 503 عابر.
-        retryOptions: { attempts: 3, initialDelay: 1, maxDelay: 6, httpStatusCodes: [408, 500, 502, 503, 504] },
+        // محاولة إعادة واحدة تكفي: البدائل في السلسلة أسرع من تكرار الطرق على نموذج مزدحم.
+        retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 6, httpStatusCodes: [408, 500, 502, 503, 504] },
       },
     },
   };
