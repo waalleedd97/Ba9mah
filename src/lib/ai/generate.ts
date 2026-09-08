@@ -14,7 +14,7 @@ import {
 import type { NewsBrief, Post, Round } from '@/lib/types';
 import { AIError, structuredCall } from './gemini';
 import { GenerationSchema } from './schemas';
-import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, ownOpeners, selectExamples, shapeTargets, stripCopiedOpener } from './prompts';
+import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, ownOpeners, reflowWalls, selectExamples, shapeTargets, stripCopiedOpener } from './prompts';
 import { verifyIfNeeded } from './labor-law';
 
 export interface GeneratedRound {
@@ -72,7 +72,10 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
     .map((p) => {
       const r = stripCopiedOpener(p.content, openers);
       if (r.stripped) console.log(`[generate] removed copied opener: ${r.stripped}`);
-      return r.stripped ? { ...p, content: r.content } : p;
+      // كتلة من سطر واحد طويل تُعاد إلى أسطر قصيرة مفصولة بسطر فارغ كما يكتب المستخدم (النماذج الضعيفة تتجاهل أهداف الشكل)
+      const w = reflowWalls(r.stripped ? r.content : p.content);
+      if (w.changed) console.log(`[generate] reflowed a single-line wall into ${w.content.split('\n\n').length} lines`);
+      return { ...p, content: w.content };
     });
   if (drafts.length === 0) throw new AIError('لم يرجع النموذج أي بوست صالح', 'parse');
 
