@@ -176,6 +176,8 @@ export interface GenerationUserInput {
   roundNumber: number;
   /** إحصاءات نصوص المستخدم نفسه (إن كانت كافية) لفرض شكله البصري وطوله */
   layout?: CorpusStats | null;
+  /** هدف شكل بصري لكل بوست (عدد الأسطر وأطوالها) مأخوذ من نصوص المستخدم، انظر shapeTargets */
+  shapes?: string[];
 }
 
 export function buildGenerationUser(input: GenerationUserInput): string {
@@ -190,7 +192,9 @@ export function buildGenerationUser(input: GenerationUserInput): string {
             const own = p.kind === 'own' ? ' (كتبه المستخدم بنفسه — قلّد صوته وإيقاعه)' : '';
             return `--- مثال ${i + 1} | الموضوع: ${p.topic}${own}${edited} ---\n${p.content}`;
           })
-          .join('\n\n'),
+          .join('\n\n') +
+        `\n\nأسطر افتتاحية ممنوع نسخها أو تحويرها في أي بوست (هي أسطر المستخدم نفسه، والنسخ يفضح التقليد): ` +
+        input.examples.map((p) => `"${p.content.split('\n').find((l) => l.trim())?.trim().slice(0, 60) ?? ''}"`).join(' | '),
     );
   }
 
@@ -216,10 +220,13 @@ export function buildGenerationUser(input: GenerationUserInput): string {
     : `اكتب 4 بوستات LinkedIn جديدة، كل واحد عن موضوع مختلف يهم جمهور التخصص، بمواضيع جديدة ومفيدة وغير مستهلكة.`;
 
   const layout = input.layout && input.layout.count >= 5 ? `\nالشكل البصري كما في نصوص المستخدم: ${describeLayout(input.layout)}.` : '';
+  const shapes = input.shapes?.length
+    ? `\nالشكل المستهدف لكل بوست، مأخوذ من نصوص المستخدم نفسها (عدد الأسطر غير الفارغة وطول كل سطر بالأحرف تقريباً ±30%؛ سطر فارغ بين الأسطر):\n${input.shapes.join('\n')}`
+    : '';
   sections.push(
     `=== المطلوب (الجولة ${input.roundNumber}) ===\n${task}\n` +
       `التوزيع: ${committed} بوست ملتزم بملف الأسلوب، و${input.exploratory} بوست استكشافي (علّمه exploratory=true).\n` +
-      `نوّع الأشكال: لا يتكرر الشكل بين البوستات الأربعة، ولا نوع الخاتمة، ولا الشكل البصري (عدد الأسطر وطولها): واحد على الأقل فيه فقرة شرح متصلة، وواحد على الأقل قصير جداً.${layout}`,
+      `نوّع الأشكال: لا يتكرر الشكل بين البوستات الأربعة، ولا نوع الخاتمة، ولا الشكل البصري (عدد الأسطر وطولها).${layout}${shapes}`,
   );
 
   return sections.join('\n\n');
@@ -236,8 +243,8 @@ export const LEARN_SYSTEM = `أنت محلل أسلوب كتابة خبير. م�
 - حدد الصوت الغالب أولاً. النصوص القليلة التي تخالفه بوضوح (اقتباس منقول عن شخص آخر، تحية صباحية، فصحى رسمية بين نصوص عامية، قائمة مبتورة من سطرين) ضجيج: لا تستخلص منها الصوت ولا تذكرها كسمة.
 - الطول والتنسيق أرقام لا انطباعات: اعتمد الإحصاءات المحسوبة المرفقة مع النصوص. قل النسبة ("ربع النصوص فيها إيموجي"، "الغالب ثلاثة أسطر") ولا تستخدم كلمات مثل "مكثف" أو "دائماً" إلا إذا أيدتها الأرقام.
 - الرسم الإملائي جزء من الصوت: هل يكتب الهمزة في أول الكلمة (أ/إ) أم ألفاً مجردة (اذا، اكثر)؟ هل يستخدم التنوين؟ ما علامات الترقيم التي يفضلها (.. أو ، أو ! أو لا شيء)؟ اذكر ذلك صراحة في التنسيق حتى يقلده الكاتب ولا يصححه.
-- الافتتاحيات: صف النوع لا السطر الحرفي (مثال: "خبر تقني بصيغة اندهاش"، "حكم قاطع على ممارسة شائعة") مع مثال قصير من نصوصه بين قوسين. ولا تحوّل لازمة واحدة (صرخة اندهاش أو تعبير يكرره أحياناً) إلى قاعدة؛ اذكرها كنوع نادر يظهر مرة كل عدة بوستات.
-- الشكل البصري: صف التنوع لا القالب. إذا كانت نصوصه تجمع بين أسطر قصيرة وفقرات متصلة من جملتين أو ثلاث فقل ذلك بالنسب المرفقة، ولا تكتب قاعدة تمنع الفقرات أو تفرض سطراً لكل جملة.
+- الافتتاحيات: صف النوع لا السطر الحرفي (مثال: "خبر تقني بصيغة اندهاش"، "حكم قاطع على ممارسة شائعة"). لا تقتبس أسطراً حرفية من نصوصه في الملف إطلاقاً؛ الكاتب الذي يقرأ الملف ينسخها كما هي فتصبح لازمة مكررة. ولا تحوّل صرخة اندهاش أو تعبيراً يكرره أحياناً إلى قاعدة؛ اذكره كنوع نادر يظهر مرة كل عدة بوستات.
+- الشكل البصري: صف التنوع لا القالب وبالنسب المرفقة: كم بالمئة فقرات متصلة من جملتين أو ثلاث، وكم أسطر قصيرة، وكم قوائم. لا تكتب أن الكاتب "يفضل" الفقرات أو "يفضل" الأسطر المفردة، ولا قاعدة تمنع أحدهما؛ الشكل عنده يتبع الفكرة.
 - المفردات والتعابير: فقط ما تكرر مرتين فأكثر أو ما يميزه بوضوح، وبالصيغة التي كتبها هو. لا تذكر التعبير الواحد بصيغتين.
 - إذا عدّل المستخدم بوستاً بيده قبل الإعجاب، فالفرق بين النسخة الأصلية والمعدّلة هو أقوى إشارة لذوقه بعد نصوصه.
 - صف الصوت كإنسان لا كقالب: ما الذي يجعله يبدو حقيقياً؟ وما الذي لو أضفته لبدا آلياً؟
@@ -265,6 +272,8 @@ export interface CorpusStats {
   medianMaxLineChars: number;
   /** نصوص من ثلاثة أسطر فأكثر كلها أسطر قصيرة (أقل من 70 حرفاً): القالب المتقطع */
   allShortShare: number;
+  /** 90% من الأسطر غير الفارغة أقصر من هذا الطول: سقف عملي لطول السطر */
+  p90LineChars: number;
   /** نصوص متعددة الأسطر تفصل بين أسطرها بسطر فارغ */
   blankSepShare: number;
   /** كلمات شائعة كُتبت بهمزة في أولها (أن، إذا، أكثر...) مقابل كتابتها بألف مجردة (ان، اذا، اكثر...) */
@@ -320,6 +329,7 @@ export function corpusStats(posts: Post[]): CorpusStats {
     longLineShare: share((t) => lineLengths(t).some((l) => l >= 90)),
     medianMaxLineChars: median(texts.map((t) => Math.max(0, ...lineLengths(t)))),
     allShortShare: share((t) => nonEmptyLines(t) >= 3 && lineLengths(t).every((l) => l < 70)),
+    p90LineChars: percentile(texts.flatMap(lineLengths), 0.9),
     blankSepShare: multi.length ? multi.filter((t) => /\n[ \t]*\n/.test(t)).length / multi.length : 0,
     hamzaWords,
     bareAlefWords,
@@ -327,6 +337,63 @@ export function corpusStats(posts: Post[]): CorpusStats {
 }
 
 const lineLengths = (t: string) => t.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => l.length);
+
+function percentile(nums: number[], q: number): number {
+  if (nums.length === 0) return 0;
+  const s = [...nums].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(q * (s.length - 1)))];
+}
+
+/** ترتيب حتمي شبه عشوائي حسب بذرة (رقم الجولة): يتغير بين الجولات ويثبت داخل الجولة */
+function seededOrder(n: number, seed: number): number[] {
+  const a = Array.from({ length: n }, (_, i) => i);
+  let s = (Math.abs(seed) * 2654435761) % 4294967296 || 1;
+  for (let i = n - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    const j = s % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function describeShape(p: Post, i: number): string {
+  const lens = lineLengths(p.content);
+  const kind = layoutOf(p.content);
+  if (kind === 'short') return `بوست ${i}: قصير جداً، ${lens.length === 1 ? 'سطر واحد' : 'سطران'} (${lens.join('، ')} حرفاً تقريباً)`;
+  if (kind === 'list') {
+    const items = p.content.split('\n').filter((l) => BULLET_LINE_RE.test(l)).length;
+    return `بوست ${i}: سطر افتتاحي ثم قائمة من ${items} عناصر قصيرة${lens.length > items + 1 ? ' وسطر ختامي' : ''}`;
+  }
+  return `بوست ${i}: ${lens.length} أسطر بأطوال تقريبية ${lens.join('، ')} حرفاً${kind === 'paragraph' ? ' (أحدها فقرة من جملتين أو ثلاث)' : ' (كلها جمل قصيرة)'}`;
+}
+
+/**
+ * أهداف شكل بصري لكل بوست في الجولة، مأخوذة من نصوص المستخدم نفسها:
+ * الوصف النثري للإحصاءات جعل نماذج Flash تكتب إما أسطراً متقطعة أو فقرات طويلة؛ الأرقام لكل بوست أدق.
+ */
+export function shapeTargets(own: Post[], seed: number, n = 4): string[] {
+  // نستبعد الشواذ (قوائم طويلة جداً أو فقرات مقالية تتجاوز 170 حرفاً للسطر) كي لا تصبح هدفاً
+  const pool = own.filter((p) => {
+    const lens = lineLengths(p.content);
+    return p.content.trim().length >= 20 && lens.length <= 12 && Math.max(...lens) <= 170;
+  });
+  if (pool.length < n) return [];
+  const order = seededOrder(pool.length, seed).map((i) => pool[i]);
+  const picked: Post[] = [];
+  const seen = new Set<LayoutKind>();
+  for (const p of order) {
+    if (picked.length >= n) break;
+    const kind = layoutOf(p.content);
+    if (seen.has(kind)) continue;
+    picked.push(p);
+    seen.add(kind);
+  }
+  for (const p of order) {
+    if (picked.length >= n) break;
+    if (!picked.includes(p)) picked.push(p);
+  }
+  return picked.map((p, i) => describeShape(p, i + 1));
+}
 
 /** تصنيف الشكل البصري لنص واحد: لاختيار أمثلة متنوعة الشكل */
 export type LayoutKind = 'short' | 'list' | 'paragraph' | 'lines';
@@ -348,7 +415,8 @@ export function describeLayout(s: CorpusStats): string {
   const sep = s.blankSepShare >= 0.5 ? 'وسطر فارغ بين الفقرات' : 'وبلا أسطر فارغة غالباً';
   return (
     `افتتاحية قصيرة مستقلة ${sep}. ${pct(s.longLineShare)} من نصوصه فيها فقرة أو سطر طويل من جملتين أو ثلاث متصلة ` +
-    `(أطول سطر وسيطه ${s.medianMaxLineChars} حرفاً)، و${pct(s.allShortShare)} فقط كلها أسطر قصيرة متساوية، و${pct(s.shortShare)} من ثلاثة أسطر أو أقل. ` +
+    `(أطول سطر وسيطه ${s.medianMaxLineChars} حرفاً، والسطر الواحد لا يتجاوز عادةً ${s.p90LineChars} حرفاً: جملتان أو ثلاث قصيرة لا خمس)، ` +
+    `و${pct(s.allShortShare)} فقط كلها أسطر قصيرة متساوية، و${pct(s.shortShare)} من ثلاثة أسطر أو أقل. ` +
     `وزّع هذه الأشكال على البوستات الأربعة بهذه النسب تقريباً: لا تجعلها كلها أسطراً قصيرة متقطعة ولا كلها كتلة واحدة`
   );
 }
