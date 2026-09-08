@@ -6,7 +6,7 @@ import { getImageFile } from '@/lib/db/repo';
 import { keywords, overlap } from '@/lib/text';
 import { imageBlock, structuredCall, systemText } from './gemini';
 import { DislikeAnalysisSchema, ImageDislikeSchema, ImageLikeSchema } from './schemas';
-import { DISLIKE_SYSTEM, buildDislikeUser, corpusStats, layoutOf, type LayoutKind } from './prompts';
+import { DISLIKE_SYSTEM, buildDislikeUser, contradictsCorpus, corpusStats, layoutOf, type LayoutKind } from './prompts';
 
 /** القواعد المتعلَّمة الفعّالة: قليلة كي لا تطغى على ملف الأسلوب ونصوص المستخدم في طلب التوليد */
 const MAX_LEARNED_AVOID = 12;
@@ -51,6 +51,7 @@ export async function analyzeDislikedPost(postId: string, userReasons: string[] 
     const profile = latestProfile();
     const ownExamples = ownReference();
     const ownAll = listOwnPostsSample(60).posts;
+    const stats = ownAll.length >= 5 ? corpusStats(ownAll) : null;
     const existing = ruleTexts('avoid');
     const { data } = await structuredCall({
       kind: 'analyze_dislike',
@@ -58,7 +59,7 @@ export async function analyzeDislikedPost(postId: string, userReasons: string[] 
       system: [systemText(DISLIKE_SYSTEM)],
       user: buildDislikeUser(post, {
         ownExamples,
-        layout: ownAll.length >= 5 ? corpusStats(ownAll) : null,
+        layout: stats,
         profile: profile?.data ?? null,
         avoidRules: existing,
         userReasons: reasons,
@@ -76,6 +77,11 @@ export async function analyzeDislikedPost(postId: string, userReasons: string[] 
         }
         if (isDuplicateRule(rule, existing)) {
           console.log(`[analyze] skipped a duplicate rule: ${rule.slice(0, 60)}`);
+          continue;
+        }
+        // حارس حتمي: قاعدة تمنع ما يفعله المستخدم في نصوصه (أسطر قصيرة، مفرداته...) خاطئة مهما بدت مقنعة
+        if (stats && contradictsCorpus(rule, stats, profile?.data.vocabulary ?? [])) {
+          console.log(`[analyze] skipped a rule that contradicts the user's own posts: ${rule.slice(0, 60)}`);
           continue;
         }
         if (addRule('avoid', rule, 'learned')) added++;

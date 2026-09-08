@@ -19,7 +19,20 @@ import {
 import type { StyleProfile } from '@/lib/types';
 import { structuredCall, systemText } from './gemini';
 import { LearnOutputSchema } from './schemas';
-import { LEARN_SYSTEM, buildLearnUser, buildOwnCorpusBlock, isOwnOpener, ownOpeners, renderProfileMarkdown, scrubOwnLines } from './prompts';
+import {
+  LEARN_SYSTEM,
+  NEUTRAL_STRUCTURE,
+  buildLearnUser,
+  buildOwnCorpusBlock,
+  contradictsCorpus,
+  corpusStats,
+  deterministicFormatting,
+  deterministicLength,
+  isOwnOpener,
+  ownOpeners,
+  renderProfileMarkdown,
+  scrubOwnLines,
+} from './prompts';
 
 /** الحد الأدنى من التقييمات الجديدة قبل إعادة استخلاص الملف تلقائياً */
 export const MIN_NEW_RATINGS = 3;
@@ -40,7 +53,7 @@ export function relearnIsDue(): boolean {
 }
 
 /** استخلاص ملف أسلوب جديد من كل البيانات (يُنفَّذ مرة واحدة في كل لحظة) */
-export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?: boolean }): Promise<StyleProfile | null> {
+export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?: boolean; fresh?: boolean }): Promise<StyleProfile | null> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
@@ -51,7 +64,8 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
       const minLiked = opts?.force ? 1 : MIN_LIKED_FOR_PROFILE;
       if (!spec || totalLiked < minLiked) return null;
       const disliked = listDislikedWithReasons(20);
-      const previous = latestProfile();
+      // fresh: من الصفر بلا وراثة الملف السابق (عندما يكون السابق قد انحرف عن أسلوب المستخدم)
+      const previous = opts?.fresh ? null : latestProfile();
       setSetting('learning_started_at', String(Date.now()));
 
       const system = [systemText(LEARN_SYSTEM)];
@@ -87,6 +101,18 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
       data.hooks = data.hooks.map((h) => scrubOwnLines(h, openers)).filter(Boolean);
       data.vocabulary = data.vocabulary.filter((v) => !isOwnOpener(v, openers));
 
+      // حارس حتمي: الطول والتنسيق من إحصاءات نصوص المستخدم لا من رأي النموذج، وحذف كل منع يخالف نصوصه
+      const stats = own.posts.length >= 5 ? corpusStats(own.posts) : null;
+      let dropped: string[] = [];
+      if (stats) {
+        data.length = deterministicLength(stats);
+        data.formatting = deterministicFormatting(stats);
+        if (contradictsCorpus(data.structure, stats)) data.structure = NEUTRAL_STRUCTURE;
+        dropped = data.do_not.filter((d) => contradictsCorpus(d, stats, data.vocabulary));
+        data.do_not = data.do_not.filter((d) => !dropped.includes(d));
+        if (dropped.length) console.log(`[learn] dropped ${dropped.length} do_not item(s) that contradict the user's own posts: ${dropped.join(' | ')}`);
+      }
+
       const profile = insertProfile({
         markdown: renderProfileMarkdown(data),
         data,
@@ -96,7 +122,11 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
       setSetting('last_learn_trigger', trigger);
 
       // دمج القواعد المتعلَّمة: بدل تراكم عشرات القواعد المتناقضة، قائمة قصيرة راجعها التعلم على ضوء نصوص المستخدم
-      const clean = consolidated.map((r) => r.trim()).filter((r) => r.length >= 8 && r.length <= 180).slice(0, 8);
+      const clean = consolidated
+        .map((r) => r.trim())
+        .filter((r) => r.length >= 8 && r.length <= 180)
+        .filter((r) => !(stats && contradictsCorpus(r, stats, data.vocabulary)))
+        .slice(0, 8);
       if (learnedAvoid.length >= 4 && clean.length > 0) {
         for (const r of learnedAvoid) updateRule(r.id, { active: false });
         for (const r of clean) addRule('avoid', r, 'learned');
