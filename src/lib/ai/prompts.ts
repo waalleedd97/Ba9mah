@@ -380,7 +380,7 @@ function describeShape(p: Post, i: number): string {
     const items = p.content.split('\n').filter((l) => BULLET_LINE_RE.test(l)).length;
     return `بوست ${i}: سطر افتتاحي ثم قائمة من ${items} عناصر قصيرة${lens.length > items + 1 ? ' وسطر ختامي' : ''}`;
   }
-  return `بوست ${i}: ${lens.length} أسطر بأطوال تقريبية ${lens.join('، ')} حرفاً${kind === 'paragraph' ? ' (أحدها فقرة من جملتين أو ثلاث)' : ' (كلها جمل قصيرة)'}`;
+  return `بوست ${i}: ${lens.length} أسطر بأطوال تقريبية ${lens.join('، ')} حرفاً${kind === 'paragraph' ? ' (أحدها فقرة من جملتين أو ثلاث)' : ' (كل سطر جملة قصيرة كاملة، لا كلمتين مبتورتين)'}`;
 }
 
 /** يضغط الحروف المكررة (اسلمممممم → اسلمم) كي تتطابق صيغ اللازمة الواحدة */
@@ -445,6 +445,8 @@ export function shapeTargets(own: Post[], seed: number, n = 4, opts?: { allowLis
   const pool = own.filter((p) => {
     const lens = lineLengths(p.content);
     if (opts?.allowLists === false && layoutOf(p.content) === 'list') return false;
+    // وسيط طول السطر أقل من 25 حرفاً = تعداد أسماء أو كلمات مبتورة؛ هدفٌ كهذا يُنتج بوستاً "مقطّعاً" يرفضه المستخدم
+    if (lens.length >= 3 && median(lens) < 25) return false;
     return p.content.trim().length >= 20 && lens.length <= 12 && Math.max(...lens) <= 170;
   });
   if (pool.length < n) return [];
@@ -474,6 +476,49 @@ export function layoutOf(content: string): LayoutKind {
   if (lens.some((l) => l >= 90)) return 'paragraph';
   return 'lines';
 }
+
+/** صيغ المنع؛ بنود do_not تبدأ غالباً بالمصدر ("استخدام كذا") فهي منع ضمني */
+const BAN_WORDS = /لا تستخدم|لا تكتب|لا تعتمد|لا تقطع|لا تقطّع|تجنب|ممنوع|ابتعد|بدون|^لا |^استخدام|^الاستخدام|^كتابة|^الكتابة|^الاعتماد|^اعتماد/;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** هل النص يمنع هذه المفردة تحديداً (مقتبسة أو مسبوقة بـ "كلمة/تعبير")؟ لا مجرد ورودها في مثال */
+function bansWord(text: string, word: string): boolean {
+  const w = escapeRe(word);
+  return new RegExp(`['"«‹“]\\s*${w}\\s*['"»›”]|(كلمة|مفردة|لفظ|لفظة|عبارة|مصطلح|تعبير|مثل)\\s*[:：]?\\s*['"«‹“]?${w}(?=\\s|$|['"»›”،.)])`).test(text);
+}
+
+/**
+ * حارس حتمي ضد النماذج الضعيفة: هل يمنع هذا البند شيئاً يفعله المستخدم في نصوصه؟
+ * (أسطر قصيرة، سطر فارغ بين الأسطر، إيموجي، قوائم، مفرداته) أو يفرض "فقرات سردية" على كاتب أسطره قصيرة.
+ */
+export function contradictsCorpus(text: string, s: CorpusStats, vocabulary: string[] = []): boolean {
+  const bans = BAN_WORDS.test(text);
+  const shortWriter = s.shortShare >= 0.3 || s.allShortShare >= 0.15;
+  if (shortWriter && /(أسطر|الأسطر|السطور|سطور|جمل|الجمل)\s+(قصيرة|القصيرة|مقطعة|المقطعة|متقطعة|المتقطعة|مبتورة|المبتورة|مقتضبة|المقتضبة|مفردة|المفردة|منفصلة|المنفصلة)|أسلوب التغريدات|كالتغريدات/.test(text) && bans) return true;
+  if (shortWriter && /فقرات?\s+(سردية|مترابطة|متصلة|متماسكة|كاملة)/.test(text)) return true;
+  if (s.blankSepShare >= 0.5 && /سطر فارغ|الأسطر الفارغة|الفراغات|فراغات/.test(text) && bans) return true;
+  if (s.emojiShare >= 0.2 && /إيموجي|الإيموجي|الرموز التعبيرية|ايموجي/.test(text) && bans) return true;
+  if (s.bulletShare >= 0.15 && /القوائم|قوائم|النقاط|نقاط/.test(text) && bans && !/الطويل|المبالغ|لغير الأدوات|إلا|فقط|مبتورة|كلمتين/.test(text)) return true;
+  for (const v of vocabulary) {
+    const w = v.trim();
+    if (w.length >= 3 && bans && bansWord(text, w) && !/في كل بوست|حشو|كحشوة|تناسب السياق/.test(text)) return true;
+  }
+  return false;
+}
+
+/** وصف الطول من الإحصاءات مباشرة: لا يُترك للنموذج كي لا يكتب "فقرات سردية" لكاتب أسطره قصيرة */
+export function deterministicLength(s: CorpusStats): string {
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  return `الوسيط ${s.medianChars} حرفاً في ${s.medianLines} أسطر غير فارغة؛ ${pct(s.shortShare)} من نصوصه ثلاثة أسطر أو أقل و${pct(s.longShare)} عشرة أسطر فأكثر. السطر الواحد لا يتجاوز عادةً ${s.p90LineChars} حرفاً.`;
+}
+
+/** وصف التنسيق من الإحصاءات مباشرة */
+export function deterministicFormatting(s: CorpusStats): string {
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  return `${describeLayout(s)}. إيموجي في ${pct(s.emojiShare)} من نصوصه، قوائم في ${pct(s.bulletShare)} (للأدوات والأسماء)، روابط أو منشنات في ${pct(s.linkShare)}، وتنتهي بسؤال في ${pct(s.questionEndShare)}.`;
+}
+
+/** بنية محايدة تُستخدم عندما يفرض النموذج "فقرات سردية" على كاتب أسطره قصيرة */
+export const NEUTRAL_STRUCTURE = 'افتتاحية قصيرة مباشرة (خبر، رأي، أو نقطة ألم)، ثم الشرح بالشكل الذي يناسب الفكرة: أسطر قصيرة كاملة، أو فقرة من جملتين أو ثلاث، أو قائمة أدوات، وخاتمة بنتيجة عملية بلا سؤال تفاعلي.';
 
 /**
  * وصف الشكل البصري للمستخدم بصيغة تنوع لا قالب.
