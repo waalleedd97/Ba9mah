@@ -265,7 +265,9 @@ export const LEARN_SYSTEM = `أنت محلل أسلوب كتابة خبير. م�
 - أسباب الرفض المسجلة إشارات مباشرة، حوّلها إلى قواعد تجنب واضحة.
 - اكتب الملف بصيغة تعليمات يستطيع كاتب آخر تطبيقها فوراً، بدون إنشاء أو مديح.
 - حدد مستوى الثقة بحسب حجم البيانات: نصوص المستخدم نفسه تزن أكثر. 15+ نصاً من كتابته = high، 5 إلى 14 أو 20+ معجَب = medium، أقل = low.
-- إذا وُجد ملف سابق فحدّثه بدل البدء من الصفر: احتفظ بما تأكد، وعدّل ما تناقض مع البيانات الجديدة.`;
+- إذا وُجد ملف سابق فحدّثه بدل البدء من الصفر: احتفظ بما تأكد، وعدّل ما تناقض مع البيانات الجديدة.
+- قواعد التجنب المتعلَّمة من تحليل الرفض قد تكون مبالغاً فيها أو خاطئة. إذا خالفت نصوص المستخدم أو الإحصاءات المرفقة (مثل: منع الأسطر القصيرة بينما نصوصه أسطر قصيرة مفصولة بسطر فارغ، أو منع مفردة يستخدمها هو) فتجاهلها ولا تنقلها إلى الملف. الرفض يعني أن البوست المولَّد أخطأ في محاكاته، لا أن أسلوب المستخدم نفسه خطأ.
+- avoid_rules_consolidated: أعد صياغة القواعد المتعلَّمة المرفقة في 8 قواعد كحد أقصى، كل قاعدة جملة واحدة حتى 120 حرفاً، بلا تكرار ولا تناقض مع نصوص المستخدم، مع حذف ما ثبت خطؤه وما تغطيه القواعد الثابتة التي اختارها المستخدم. إذا لم تُرفق قواعد متعلَّمة فأعد قائمة فارغة.`;
 
 /** إحصاءات حتمية من نصوص المستخدم تُرفق مع التعلم كي لا يبني النموذج الطول والتنسيق على الانطباع */
 export interface CorpusStats {
@@ -514,7 +516,10 @@ export interface LearnInput {
   liked: Post[];
   disliked: DislikedWithReason[];
   goldenRules: string[];
+  /** قواعد تجنب ثابتة اختارها المستخدم (الإعداد الأولي أو يدوياً) */
   avoidRules: string[];
+  /** قواعد تجنب متعلَّمة من تحليل الرفض: قد تكون خاطئة وتُعاد صياغتها في avoid_rules_consolidated */
+  learnedAvoidRules: string[];
   previous: StyleProfile | null;
 }
 
@@ -523,7 +528,10 @@ export function buildLearnUser(input: LearnInput): string {
   if (input.ownCount > 0) sections.push(`لدى المستخدم ${input.ownCount} نصاً من كتابته (مرفقة في تعليمات النظام). استخلص الصوت منها أولاً، ثم عدّله بما يلي.`);
   if (input.previous) sections.push(`=== الملف السابق (الإصدار ${input.previous.version}) ===\n${input.previous.markdown}`);
   if (input.goldenRules.length) sections.push(`=== قواعد اختارها المستخدم ===\n${input.goldenRules.map((r) => `- ${r}`).join('\n')}`);
-  if (input.avoidRules.length) sections.push(`=== قواعد تجنب حالية ===\n${input.avoidRules.map((r) => `- ${r}`).join('\n')}`);
+  if (input.avoidRules.length) sections.push(`=== قواعد تجنب ثابتة اختارها المستخدم ===\n${input.avoidRules.map((r) => `- ${r}`).join('\n')}`);
+  if (input.learnedAvoidRules.length) {
+    sections.push(`=== قواعد تجنب متعلَّمة من تحليل الرفض (راجعها: أعد صياغتها في avoid_rules_consolidated واحذف ما يخالف نصوص المستخدم) ===\n${input.learnedAvoidRules.map((r) => `- ${r}`).join('\n')}`);
+  }
   if (input.liked.length) {
     sections.push(
       `=== بوستات أخرى أعجبته (${input.liked.length}) ===\n` +
@@ -551,19 +559,44 @@ export function buildLearnUser(input: LearnInput): string {
 
 // ---------------------------------------------------------------- التحليل والتعديل
 
-export const DISLIKE_SYSTEM = `أنت محرر محتوى LinkedIn خبير بالسوق السعودي. يرفض المستخدم بوستاً مولّداً، ومهمتك تشخيص السبب بدقة وتحويله إلى قواعد تجنب عامة تفيد كل البوستات القادمة. كن محدداً: "نبرة وعظية في الخاتمة" أفضل من "أسلوب سيئ". إذا اختار المستخدم عدة أسباب فاكتب قاعدة مستقلة لكل سبب مختلف (حتى ثلاث)، وإلا فقاعدة واحدة.`;
+export const DISLIKE_SYSTEM = `أنت محرر يساعد كاتباً سعودياً على LinkedIn. رفض المستخدم بوستاً مولّداً، ومهمتك تحويل سبب الرفض إلى قاعدة تجنب قصيرة وعملية تفيد البوستات القادمة.
 
-export function buildDislikeUser(post: Post, profileSummary: string | null, avoidRules: string[], userReasons: string[] = []): string {
-  const ctx = [
-    profileSummary ? `ملخص أسلوب المستخدم: ${profileSummary}` : '',
-    avoidRules.length ? `قواعد تجنب حالية (لا تكررها حرفياً): ${avoidRules.join(' | ')}` : '',
-    userReasons.length
-      ? `أسباب الرفض كما اختارها المستخدم بنفسه: ${userReasons.map((r) => `"${r}"`).join('، ')} — اجعل القواعد تترجم هذه الأسباب تحديداً إلى تعليمات كتابة، قاعدة لكل سبب`
-      : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  return `${ctx ? ctx + '\n\n' : ''}البوست المرفوض | الموضوع: ${post.topic}\n${post.content}`;
+المرجع الأعلى هو نصوص المستخدم نفسه المرفقة، لا ذوقك أنت: القاعدة يجب ألا تمنع شيئاً يفعله المستخدم في نصوصه (أسطر قصيرة، سطر فارغ بين الأسطر، قوائم أدوات وأسماء، إيموجي، مفردات مثل قروشة ويمديك، صيغة الأمر، الاختصار الشديد). إذا خالفت القاعدة نصوصه فهي خاطئة ولو بدت "أكثر احترافية".
+
+كيف تفهم الأسباب:
+- "مقطّع إلى أسطر قصيرة بشكل آلي" = أسطر من كلمتين أو ثلاث بلا جملة كاملة، أو أسطر متساوية الطول كالشعارات. لا يعني أبداً الكتابة بفقرات طويلة أو منع الأسطر القصيرة.
+- "يبدو مكتوباً بالذكاء الاصطناعي" = نصيحة عامة تصلح لأي أحد، حشو، عبارات تسويقية (بديل قوي، يبيض الوجه)، خاتمة تلخّص الفوائد (كذا تضمن...)، أسئلة بلاغية، أو تكرار لازمة المستخدم كحشوة. لا يعني الإطالة ولا "التحليل العميق".
+- "رسمي أو فصحى" = مفردات كتب أو صحافة (العائق الأول، ديباجة، خلك واعي). البديل لهجة سعودية بيضاء كما يتكلم مبرمج مع زميله.
+- "ما يشبه أسلوبي" أو "مو مفهوم" = قارن بنصوص المستخدم المرفقة واذكر الفرق المحدد (الشكل، المفردات، البداية، الطول).
+
+شكل القاعدة: جملة واحدة حتى 120 حرفاً، تبدأ بـ "لا" أو "تجنب"، تذكر مثالاً من البوست بين قوسين إن أمكن، وتصف البديل بكلمات قليلة من أسلوب المستخدم. قاعدة واحدة لكل سبب مختلف، وثلاث كحد أقصى. إذا كانت قاعدة حالية تغطي السبب فلا تكررها: أعد قائمة فارغة.`;
+
+export interface DislikeContext {
+  /** ثلاثة نصوص من كتابة المستخدم بأشكال مختلفة: المرجع الذي تُقاس عليه القاعدة */
+  ownExamples: Post[];
+  layout: CorpusStats | null;
+  profile: StyleProfileData | null;
+  avoidRules: string[];
+  userReasons: string[];
+}
+
+export function buildDislikeUser(post: Post, ctx: DislikeContext): string {
+  const sections: string[] = [];
+  if (ctx.ownExamples.length) {
+    sections.push(`=== نصوص كتبها المستخدم بنفسه (المرجع الأعلى) ===\n` + ctx.ownExamples.map((p, i) => `--- نص ${i + 1} ---\n${p.content}`).join('\n\n'));
+  }
+  if (ctx.layout) sections.push(`الشكل البصري المعتاد للمستخدم: ${describeLayout(ctx.layout)}`);
+  if (ctx.profile) {
+    sections.push(`صوته: ${ctx.profile.voice}\nتنسيقه: ${ctx.profile.formatting}\nمفرداته: ${ctx.profile.vocabulary.join('، ')}`);
+  }
+  if (ctx.avoidRules.length) sections.push(`قواعد تجنب حالية (لا تكررها ولا تناقضها): ${ctx.avoidRules.join(' | ')}`);
+  if (ctx.userReasons.length) {
+    sections.push(`أسباب الرفض كما اختارها المستخدم بنفسه: ${ctx.userReasons.map((r) => `"${r}"`).join('، ')} — قاعدة لكل سبب مختلف تترجمه إلى تعليمات كتابة محددة.`);
+  } else {
+    sections.push('لم يذكر المستخدم سبباً؛ شخّص الفرق بين هذا البوست ونصوصه.');
+  }
+  sections.push(`=== البوست المرفوض | الموضوع: ${post.topic} ===\n${post.content}`);
+  return sections.join('\n\n');
 }
 
 export function buildEditSystem(spec: string, profile: StyleProfile | null, goldenRules: string[]): SystemBlock[] {

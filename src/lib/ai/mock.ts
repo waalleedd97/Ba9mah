@@ -33,6 +33,7 @@ export function mockFor(kind: string, hint?: string): unknown {
         do_not: ['لا تستخدم فصحى ثقيلة', 'لا تطوّل بلا فائدة'],
         topics_that_work: ['التحقق من الفكرة', 'التعلم من الفشل'],
         confidence: 'medium',
+        avoid_rules_consolidated: [],
       };
     case 'analyze_dislike':
       return { reason: 'نبرة وعظية وطول زائد', category: 'tone', avoid_rules: ['تجنب النبرة الوعظية والجمل الطويلة'], confidence: 'medium' };

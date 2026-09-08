@@ -1,5 +1,6 @@
 import 'server-only';
 import {
+  addRule,
   countByKind,
   countByRating,
   countRatedSince,
@@ -10,12 +11,14 @@ import {
   listDislikedWithReasons,
   listLikedNonOwn,
   listOwnPostsSample,
+  listRules,
   ruleTexts,
   setSetting,
+  updateRule,
 } from '@/lib/db/repo';
 import type { StyleProfile } from '@/lib/types';
 import { structuredCall, systemText } from './gemini';
-import { StyleProfileSchema } from './schemas';
+import { LearnOutputSchema } from './schemas';
 import { LEARN_SYSTEM, buildLearnUser, buildOwnCorpusBlock, isOwnOpener, ownOpeners, renderProfileMarkdown, scrubOwnLines } from './prompts';
 
 /** الحد الأدنى من التقييمات الجديدة قبل إعادة استخلاص الملف تلقائياً */
@@ -55,9 +58,14 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
       // نصوص المستخدم ثابتة بين التحديثات → تُخزَّن في الكاش لساعة
       if (own.posts.length) system.push(systemText(buildOwnCorpusBlock(own.posts, own.total), '1h'));
 
-      const { data } = await structuredCall({
+      // القواعد الثابتة (الإعداد الأولي أو يدوية) مرجع؛ المتعلَّمة من تحليل الرفض تُراجَع وتُعاد صياغتها
+      const avoidAll = listRules('avoid');
+      const fixedAvoid = avoidAll.filter((r) => r.source !== 'learned');
+      const learnedAvoid = avoidAll.filter((r) => r.source === 'learned');
+
+      const { data: out } = await structuredCall({
         kind: 'learn',
-        schema: StyleProfileSchema,
+        schema: LearnOutputSchema,
         system,
         user: buildLearnUser({
           spec,
@@ -65,12 +73,14 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
           liked: likedOther,
           disliked,
           goldenRules: ruleTexts('golden'),
-          avoidRules: ruleTexts('avoid'),
+          avoidRules: fixedAvoid.map((r) => r.text),
+          learnedAvoidRules: learnedAvoid.map((r) => r.text),
           previous,
         }),
         effort: 'high',
         maxTokens: 8000,
       });
+      const { avoid_rules_consolidated: consolidated, ...data } = out;
 
       // الملف لا يقتبس افتتاحيات المستخدم حرفياً: الكاتب ينسخها كما هي فتصير لازمة في كل جولة
       const openers = ownOpeners(own.posts);
@@ -84,6 +94,14 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
         dislikedCount: disliked.length,
       });
       setSetting('last_learn_trigger', trigger);
+
+      // دمج القواعد المتعلَّمة: بدل تراكم عشرات القواعد المتناقضة، قائمة قصيرة راجعها التعلم على ضوء نصوص المستخدم
+      const clean = consolidated.map((r) => r.trim()).filter((r) => r.length >= 8 && r.length <= 180).slice(0, 8);
+      if (learnedAvoid.length >= 4 && clean.length > 0) {
+        for (const r of learnedAvoid) updateRule(r.id, { active: false });
+        for (const r of clean) addRule('avoid', r, 'learned');
+        console.log(`[learn] consolidated ${learnedAvoid.length} learned avoid rules into ${clean.length}`);
+      }
       console.log(`[learn] profile v${profile.version} (${trigger}) from ${own.posts.length}/${own.total} own + ${likedOther.length} liked / ${disliked.length} disliked`);
       return profile;
     } finally {
