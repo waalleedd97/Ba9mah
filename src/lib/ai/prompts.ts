@@ -430,6 +430,76 @@ export function scrubOwnLines(text: string, openers: string[]): string {
   return out.replace(/\s{2,}/g, ' ').trim();
 }
 
+/** سطر أطول من هذا وفيه أكثر من جملة يُقسم عند نهايات الجمل؛ 90% من أسطر المستخدم أقصر من نحو 105 أحرف */
+const SENTENCE_SPLIT_CHARS = 100;
+/** جملة واحدة أطول من هذا تُقسم عند الفواصل */
+const COMMA_SPLIT_CHARS = 120;
+const SENTENCE_END = /[.!؟]\s+\S/;
+
+function splitLongSentence(s: string): string[] {
+  if (s.length <= COMMA_SPLIT_CHARS) return [s];
+  const parts = s.split(/(?<=،)\s+/);
+  const out: string[] = [];
+  let cur = '';
+  for (const p of parts) {
+    if (!cur) cur = p;
+    else if ((cur + ' ' + p).length <= SENTENCE_SPLIT_CHARS) cur += ' ' + p;
+    else {
+      out.push(cur);
+      cur = p;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function needsReflow(line: string): boolean {
+  if (BULLET_LINE_RE.test(line)) return false;
+  return (line.length > SENTENCE_SPLIT_CHARS && SENTENCE_END.test(line)) || line.length > COMMA_SPLIT_CHARS;
+}
+
+/**
+ * كتلة من سطر واحد طويل (أو حتى ثلاثة) تُعاد إلى شكل المستخدم: سطر لكل جملة أو جملتين قصيرتين، وسطر فارغ بينها.
+ * لا يغيّر الكلمات؛ يقسم عند نهايات الجمل (. ! ؟) ثم عند الفواصل للجمل الطويلة جداً، ويحذف النقطة في آخر السطر كما يكتب المستخدم.
+ * النماذج الضعيفة تتجاهل أهداف الشكل وتكتب فقرة واحدة؛ هذا الحارس يضمن الشكل مهما كان النموذج.
+ */
+export function reflowWalls(content: string): { content: string; changed: boolean } {
+  const lines = content
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0 || lines.length > 3 || !lines.some(needsReflow)) return { content, changed: false };
+  const out: string[] = [];
+  for (const line of lines) {
+    if (!needsReflow(line)) {
+      out.push(line);
+      continue;
+    }
+    const sentences = line
+      .split(/(?<=[.!؟])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .flatMap(splitLongSentence);
+    let cur = '';
+    for (const s of sentences) {
+      if (!cur) cur = s;
+      else if (out.length === 0 && cur.length <= 80) {
+        // الافتتاحية سطر مستقل قصير
+        out.push(cur);
+        cur = s;
+      } else if ((cur + ' ' + s).length <= SENTENCE_SPLIT_CHARS) cur += ' ' + s;
+      else {
+        out.push(cur);
+        cur = s;
+      }
+    }
+    if (cur) out.push(cur);
+  }
+  // لا نقطة ولا فاصلة في آخر السطر: نصوص المستخدم تنتهي أسطرها بلا علامة غالباً
+  const cleaned = out.map((l) => l.replace(/[.،]$/, '').trim()).filter(Boolean);
+  return { content: cleaned.join('\n\n'), changed: cleaned.length !== lines.length };
+}
+
 /** هل هذا البند مجرد نسخة من افتتاحية للمستخدم (مثل "اسلممممم" في قائمة المفردات)؟ */
 export function isOwnOpener(text: string, openers: string[]): boolean {
   return matchesOpener(text, openers);
