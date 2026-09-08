@@ -1,18 +1,47 @@
 import 'server-only';
-import { addDislikeReason, addRule, capLearnedRules, getPost, latestProfile, ruleTexts } from '@/lib/db/repo';
+import { addDislikeReason, addRule, capLearnedRules, getPost, latestProfile, listOwnPostsSample, ruleTexts } from '@/lib/db/repo';
 import type { ImageRecord, Post } from '@/lib/types';
 import { readImageFile } from '@/lib/images/storage';
 import { getImageFile } from '@/lib/db/repo';
+import { keywords, overlap } from '@/lib/text';
 import { imageBlock, structuredCall, systemText } from './gemini';
 import { DislikeAnalysisSchema, ImageDislikeSchema, ImageLikeSchema } from './schemas';
-import { DISLIKE_SYSTEM, buildDislikeUser } from './prompts';
+import { DISLIKE_SYSTEM, buildDislikeUser, corpusStats, layoutOf, type LayoutKind } from './prompts';
 
-const MAX_LEARNED_AVOID = 15;
+/** القواعد المتعلَّمة الفعّالة: قليلة كي لا تطغى على ملف الأسلوب ونصوص المستخدم في طلب التوليد */
+const MAX_LEARNED_AVOID = 12;
 const MAX_LEARNED_IMAGE = 12;
+/** أقصى طول لقاعدة متعلَّمة؛ الأطول منها فقرة إنشائية لا تعليمات */
+const MAX_RULE_CHARS = 180;
+
+/** ثلاثة نصوص من كتابة المستخدم بأشكال بصرية مختلفة: مرجع التحليل */
+function ownReference(): Post[] {
+  const own = listOwnPostsSample(60).posts;
+  const picked: Post[] = [];
+  const seen = new Set<LayoutKind>();
+  for (const p of own) {
+    const kind = layoutOf(p.content);
+    if (seen.has(kind)) continue;
+    picked.push(p);
+    seen.add(kind);
+    if (picked.length >= 3) break;
+  }
+  for (const p of own) {
+    if (picked.length >= 3) break;
+    if (!picked.includes(p)) picked.push(p);
+  }
+  return picked;
+}
+
+/** قاعدة جديدة تكرر قاعدة موجودة (تشابه كلمات عالٍ) لا تُضاف */
+function isDuplicateRule(text: string, existing: string[]): boolean {
+  const kw = keywords(text);
+  return existing.some((e) => overlap(kw, keywords(e)) >= 0.5);
+}
 
 /**
  * بعد رفض بوست: تشخيص السبب وتحويله لقواعد تجنب (يُستدعى بعد إرسال الرد).
- * الأسباب التي اختارها المستخدم (قد تكون عدة) تُترجم كل واحدة إلى قاعدة مستقلة.
+ * التحليل يقيس على نصوص المستخدم نفسه كي لا "يصحح" أسلوبه إلى كتابة عامة، والقواعد قصيرة وغير مكررة.
  */
 export async function analyzeDislikedPost(postId: string, userReasons: string[] = []): Promise<void> {
   const post = getPost(postId);
@@ -20,18 +49,38 @@ export async function analyzeDislikedPost(postId: string, userReasons: string[] 
   const reasons = userReasons.map((r) => r.trim()).filter(Boolean);
   try {
     const profile = latestProfile();
+    const ownExamples = ownReference();
+    const ownAll = listOwnPostsSample(60).posts;
+    const existing = ruleTexts('avoid');
     const { data } = await structuredCall({
       kind: 'analyze_dislike',
       schema: DislikeAnalysisSchema,
       system: [systemText(DISLIKE_SYSTEM)],
-      user: buildDislikeUser(post, profile?.data.summary ?? null, ruleTexts('avoid'), reasons),
+      user: buildDislikeUser(post, {
+        ownExamples,
+        layout: ownAll.length >= 5 ? corpusStats(ownAll) : null,
+        profile: profile?.data ?? null,
+        avoidRules: existing,
+        userReasons: reasons,
+      }),
       effort: 'medium',
       maxTokens: 2000,
     });
     if (reasons.length === 0) addDislikeReason(post.id, data.reason, data.category);
     if (reasons.length > 0 || data.confidence !== 'low') {
-      for (const rule of data.avoid_rules.map((r) => r.trim()).filter(Boolean).slice(0, 3)) addRule('avoid', rule, 'learned');
-      capLearnedRules('avoid', MAX_LEARNED_AVOID);
+      let added = 0;
+      for (const rule of data.avoid_rules.map((r) => r.trim()).filter(Boolean).slice(0, 3)) {
+        if (rule.length > MAX_RULE_CHARS) {
+          console.log(`[analyze] skipped an over-long rule (${rule.length} chars)`);
+          continue;
+        }
+        if (isDuplicateRule(rule, existing)) {
+          console.log(`[analyze] skipped a duplicate rule: ${rule.slice(0, 60)}`);
+          continue;
+        }
+        if (addRule('avoid', rule, 'learned')) added++;
+      }
+      if (added) capLearnedRules('avoid', MAX_LEARNED_AVOID);
     }
   } catch (err) {
     console.error('[analyze] dislike analysis failed:', err instanceof Error ? err.message : err);

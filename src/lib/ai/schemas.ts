@@ -42,6 +42,14 @@ export const StyleProfileSchema = z.object({
 });
 export type StyleProfileOutput = z.infer<typeof StyleProfileSchema>;
 
+/** مخرجات التعلم: الملف نفسه + إعادة صياغة القواعد المتعلَّمة في قائمة قصيرة متسقة مع نصوص المستخدم */
+export const LearnOutputSchema = StyleProfileSchema.extend({
+  avoid_rules_consolidated: z
+    .array(z.string())
+    .describe('القواعد المتعلَّمة بعد المراجعة: حتى 8 قواعد قصيرة (120 حرفاً) بلا تكرار ولا تناقض مع نصوص المستخدم؛ فارغة إن لم تُرفق قواعد متعلَّمة'),
+});
+export type LearnOutput = z.infer<typeof LearnOutputSchema>;
+
 export const DislikeAnalysisSchema = z.object({
   reason: z.string().describe('السبب الأرجح للرفض في جملة واحدة'),
   category: z.enum(['tone', 'length', 'structure', 'hook', 'content', 'language', 'repetition', 'other']),
