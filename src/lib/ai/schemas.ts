@@ -45,7 +45,7 @@ export type StyleProfileOutput = z.infer<typeof StyleProfileSchema>;
 export const DislikeAnalysisSchema = z.object({
   reason: z.string().describe('السبب الأرجح للرفض في جملة واحدة'),
   category: z.enum(['tone', 'length', 'structure', 'hook', 'content', 'language', 'repetition', 'other']),
-  avoid_rule: z.string().describe('قاعدة عامة قصيرة تبدأ بـ "لا" أو "تجنب" تصلح لكل البوستات القادمة'),
+  avoid_rules: z.array(z.string()).describe('من قاعدة إلى ثلاث قواعد عامة قصيرة تبدأ بـ "لا" أو "تجنب"، قاعدة مستقلة لكل سبب مختلف، تصلح لكل البوستات القادمة'),
   confidence: z.enum(['low', 'medium', 'high']),
 });
 

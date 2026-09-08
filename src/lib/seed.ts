@@ -140,8 +140,39 @@ export const AVOID_OPTIONS: ChipOption[] = [
   { key: 'selfpromo', label: 'الترويج للذات', rule: 'لا ترويج للذات ولا تفاخر' },
 ];
 
-/** أسباب الرفض السريعة في شاشة التقييم */
-export const DISLIKE_REASONS = ['طويل', 'قصير', 'رسمي زيادة', 'ما يشبه أسلوبي', 'مبالغة وتحفيز مصطنع', 'عام وممل', 'يبدو مكتوباً بالذكاء الاصطناعي', 'بداية ضعيفة', 'الموضوع ما يهمني'];
+/** سبب رفض سريع في شاشة التقييم: label للزر، وreason هو النص الذي يُحفظ ويُرسل للتحليل */
+export interface DislikeReasonOption {
+  key: string;
+  label: string;
+  reason: string;
+}
+
+/** سبب "نظام النقاط": يتحول فوراً إلى قاعدة تجنب ثابتة بلا انتظار التحليل */
+export const NO_LISTS_REASON = 'استخدم نظام النقاط والقوائم وأنا ما أبيه';
+export const NO_LISTS_RULE = 'لا تستخدم النقاط ولا القوائم المرقمة إلا إذا طُلبت صراحة؛ اكتب الأفكار جملاً متصلة';
+
+/** أسباب الرفض السريعة (يمكن اختيار أكثر من واحد) */
+export const DISLIKE_REASON_OPTIONS: DislikeReasonOption[] = [
+  { key: 'long', label: 'طويل', reason: 'طويل أكثر من اللازم' },
+  { key: 'short', label: 'قصير', reason: 'قصير جداً وناقص' },
+  { key: 'formal', label: 'رسمي زيادة', reason: 'رسمي أو فصحى أكثر من اللازم' },
+  { key: 'not-me', label: 'ما يشبه أسلوبي', reason: 'ما يشبه أسلوبي' },
+  { key: 'ai', label: 'يبدو مكتوباً بالذكاء الاصطناعي', reason: 'يبدو مكتوباً بالذكاء الاصطناعي' },
+  { key: 'lists', label: 'نقاط وقوائم', reason: NO_LISTS_REASON },
+  { key: 'staccato', label: 'مقطّع لأسطر قصيرة', reason: 'مقطّع إلى أسطر قصيرة متتالية بشكل آلي' },
+  { key: 'wall', label: 'فقرة طويلة متكتلة', reason: 'فقرات طويلة متكتلة صعبة القراءة' },
+  { key: 'hype', label: 'مبالغة وتحفيز', reason: 'مبالغة وتحفيز مصطنع' },
+  { key: 'preachy', label: 'وعظ ونصائح عامة', reason: 'نبرة وعظية ونصائح عامة تصلح لأي أحد' },
+  { key: 'boring', label: 'عام وممل', reason: 'عام وممل بلا معلومة جديدة' },
+  { key: 'weak-hook', label: 'بداية ضعيفة', reason: 'بداية ضعيفة ما تشد' },
+  { key: 'weak-end', label: 'خاتمة ضعيفة', reason: 'خاتمة ضعيفة أو مقحمة' },
+  { key: 'question-end', label: 'ينتهي بسؤال', reason: 'ينتهي بسؤال تفاعلي مستهلك' },
+  { key: 'emoji', label: 'إيموجي زيادة', reason: 'إيموجي أكثر من اللازم' },
+  { key: 'english', label: 'إنجليزي زيادة', reason: 'مصطلحات إنجليزية أكثر من اللازم' },
+  { key: 'wrong', label: 'معلومة غلط', reason: 'فيه معلومة غير دقيقة أو مختلقة' },
+  { key: 'repeats', label: 'يكرر نفسه', reason: 'يكرر الفكرة نفسها بصياغات مختلفة' },
+  { key: 'topic', label: 'الموضوع ما يهمني', reason: 'الموضوع ما يهمني' },
+];
 
 export function chipRules(options: ChipOption[], keys: string[]): string[] {
   return keys.map((k) => options.find((o) => o.key === k)?.rule).filter((r): r is string => Boolean(r));

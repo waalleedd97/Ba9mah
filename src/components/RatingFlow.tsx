@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { AppStats, ImageRecord, PostWithImages, Round } from '@/lib/types';
 import { api, errorMessage } from '@/lib/client/api';
-import { DISLIKE_REASONS } from '@/lib/seed';
+import { DISLIKE_REASON_OPTIONS } from '@/lib/seed';
 import { ImageGrid } from './ImageGrid';
 import { Button, GenerationLoader, IconButton, Pill, PostPreview, Stat, Stepper, useToast } from './ui';
 import { Icon } from './icons';
@@ -32,6 +32,9 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
   const [saveBusy, setSaveBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [askReason, setAskReason] = useState(false);
+  const [reasonKeys, setReasonKeys] = useState<string[]>([]);
+  const [otherReason, setOtherReason] = useState('');
+  const [newsOpen, setNewsOpen] = useState(false);
 
   const cur = posts[idx];
   const newLikes = posts.filter((p, i) => p.rating === 'liked' && initialPosts[i]?.rating !== 'liked').length;
@@ -47,6 +50,8 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
     if (i < 0 || i >= posts.length) return;
     setIdx(i);
     setAskReason(false);
+    setReasonKeys([]);
+    setOtherReason('');
     setManual(null);
     setAiOpen(false);
     setAiText('');
@@ -54,14 +59,16 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function rate(likedIt: boolean, reason?: string) {
+  async function rate(likedIt: boolean, reasons: string[] = []) {
     if (!cur) return;
     setAskReason(false);
+    setReasonKeys([]);
+    setOtherReason('');
     try {
-      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}/rate`, { method: 'POST', json: { liked: likedIt, reason } });
+      const { post } = await api<{ post: PostWithImages }>(`/api/posts/${cur.id}/rate`, { method: 'POST', json: { liked: likedIt, reasons } });
       const updated = posts.map((p) => (p.id === cur.id ? { ...p, rating: post.rating, ratedAt: post.ratedAt } : p));
       setPosts(updated);
-      toast.success(likedIt ? 'أعجبك — بصمة يتعلم من هذا الأسلوب' : reason ? `رفضته: ${reason} — سيتجنبه` : 'رفضته — يحلل السبب في الخلفية');
+      toast.success(likedIt ? 'أعجبك — بصمة يتعلم من هذا الأسلوب' : reasons.length ? `رفضته: ${reasons.join('، ')} — سيتجنبها` : 'رفضته — يحلل السبب في الخلفية');
       const nextUnrated = updated.findIndex((p, i) => p.rating === null && i !== idx);
       setLeaving(likedIt ? 'right' : 'left');
       setTimeout(() => {
@@ -72,6 +79,13 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
     } catch (e) {
       toast.error('تعذر حفظ التقييم', errorMessage(e));
     }
+  }
+
+  /** يجمع الشرائح المختارة والسبب المكتوب في قائمة أسباب واحدة */
+  function submitDislike() {
+    const picked = DISLIKE_REASON_OPTIONS.filter((o) => reasonKeys.includes(o.key)).map((o) => o.reason);
+    const extra = otherReason.trim() ? [otherReason.trim()] : [];
+    rate(false, [...picked, ...extra]);
   }
 
   async function saveManual() {
@@ -203,6 +217,36 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
         </div>
       </div>
 
+      {round.news && (
+        <div className="card mb-2 fade-up" style={{ padding: 14, borderColor: 'var(--info)' }}>
+          <button type="button" className="row between" style={{ width: '100%', background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', textAlign: 'start' }} onClick={() => setNewsOpen((o) => !o)}>
+            <span className="row" style={{ gap: 8 }}>
+              <Icon name="globe" size={16} style={{ color: 'var(--info)' }} />
+              <b style={{ fontSize: 14 }}>الخبر: {round.news.headline}</b>
+            </span>
+            <span className="row" style={{ gap: 6 }}>
+              <Pill tone={round.news.searched ? 'info' : 'warn'}>{round.news.searched ? 'بحث في الويب' : 'بلا بحث'}</Pill>
+              <Icon name="chevron-down" size={16} style={{ transform: newsOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+            </span>
+          </button>
+          {newsOpen && (
+            <div className="mt-2 fade-in" style={{ fontSize: 14, lineHeight: 1.9 }}>
+              <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{round.news.brief}</p>
+              {round.news.note && <p className="subtle mt-1" style={{ margin: 0 }}>{round.news.note}</p>}
+              {round.news.sources.length > 0 && (
+                <div className="row mt-2" style={{ gap: 6 }}>
+                  {round.news.sources.map((s) => (
+                    <a key={s.url} href={s.url} target="_blank" rel="noreferrer noopener" className="chip" style={{ textDecoration: 'none' }}>
+                      <Icon name="globe" size={12} /> {s.title.slice(0, 40)}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <Stepper items={posts.map((p, i) => (i === idx ? 'active' : p.rating === 'liked' ? 'done' : p.rating === 'disliked' ? 'bad' : 'pending'))} />
 
       <div className="post-nav mt-2 mb-2">
@@ -268,15 +312,33 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
       {askReason ? (
         <div className="rate-bar mt-3 fade-in" style={{ display: 'block' }}>
           <div className="row between mb-1">
-            <b style={{ fontSize: 14 }}>وش اللي ما عجبك؟</b>
+            <b style={{ fontSize: 14 }}>وش اللي ما عجبك؟ <span className="subtle" style={{ fontWeight: 400 }}>اختر كل ما ينطبق</span></b>
             <button className="btn btn-ghost btn-sm" onClick={() => rate(false)}>تخطي</button>
           </div>
           <div className="row" style={{ gap: 6 }}>
-            {DISLIKE_REASONS.map((r) => (
-              <button key={r} type="button" className="chip" onClick={() => rate(false, r)}>
-                {r}
-              </button>
-            ))}
+            {DISLIKE_REASON_OPTIONS.map((r) => {
+              const on = reasonKeys.includes(r.key);
+              return (
+                <button key={r.key} type="button" className={`chip ${on ? 'active' : ''}`} aria-pressed={on} onClick={() => setReasonKeys((prev) => (on ? prev.filter((k) => k !== r.key) : [...prev, r.key]))}>
+                  {on && <Icon name="check" size={13} />} {r.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="input-row mt-2">
+            <input
+              className="input"
+              value={otherReason}
+              onChange={(e) => setOtherReason(e.target.value)}
+              placeholder="سبب آخر بكلماتك (اختياري)"
+              maxLength={120}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (reasonKeys.length || otherReason.trim())) submitDislike();
+              }}
+            />
+            <Button variant="danger" icon="thumbs-down" onClick={submitDislike} disabled={!reasonKeys.length && !otherReason.trim()}>
+              رفض{reasonKeys.length + (otherReason.trim() ? 1 : 0) > 1 ? ` (${reasonKeys.length + (otherReason.trim() ? 1 : 0)} أسباب)` : ''}
+            </Button>
           </div>
         </div>
       ) : (

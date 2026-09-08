@@ -1,4 +1,4 @@
-import type { Post, StyleProfile, StyleProfileData } from '@/lib/types';
+import type { NewsBrief, Post, StyleProfile, StyleProfileData } from '@/lib/types';
 import type { DislikedWithReason } from '@/lib/db/repo';
 import { keywords, overlap, normalizeText } from '@/lib/text';
 import { FORMATS } from './schemas';
@@ -178,6 +178,8 @@ export interface GenerationUserInput {
   layout?: CorpusStats | null;
   /** هدف شكل بصري لكل بوست (عدد الأسطر وأطوالها) مأخوذ من نصوص المستخدم، انظر shapeTargets */
   shapes?: string[];
+  /** خبر بحث عنه النظام ويريد المستخدم الكتابة عنه */
+  news?: NewsBrief | null;
 }
 
 export function buildGenerationUser(input: GenerationUserInput): string {
@@ -214,10 +216,22 @@ export function buildGenerationUser(input: GenerationUserInput): string {
     sections.push(`=== مواضيع كُتبت مؤخراً (لا تكررها ولا تقترب منها) ===\n${input.recentTopics.map((t) => `- ${t}`).join('\n')}`);
   }
 
+  if (input.news) {
+    const sources = input.news.sources.length ? `\nالمصادر: ${input.news.sources.map((s) => `${s.title} (${s.url})`).join(' | ')}` : '';
+    sections.push(
+      `=== خبر يريد المستخدم الكتابة عنه ===\nالعنوان: ${input.news.headline}\n${input.news.brief}${sources}\n` +
+        `اكتب البوستات الأربعة عن هذا الخبر تحديداً، كل بوست بزاوية مختلفة: تعليق سريع كمن قرأه للتو، ماذا يعني عملياً لجمهور التخصص في السعودية، رأي أو تحفّظ يخالف الحماس السائد، ودرس أو خطوة عملية مستفادة. ` +
+        `اعتمد على الحقائق الواردة أعلاه فقط ولا تختلق أرقاماً أو تفاصيل أو تصريحات. لا تنسخ الصياغة الصحفية؛ اكتب كما يكتب المستخدم عن خبر قرأه. ` +
+        `اذكر رابط المصدر الرئيسي في بوست واحد على الأكثر إن ناسب أسلوبه.`,
+    );
+  }
+
   const committed = 4 - input.exploratory;
-  const task = input.topic
-    ? `اكتب 4 بوستات LinkedIn عن الموضوع التالي: "${input.topic}"\nكل بوست يتناول زاوية مختلفة تماماً من نفس الموضوع.`
-    : `اكتب 4 بوستات LinkedIn جديدة، كل واحد عن موضوع مختلف يهم جمهور التخصص، بمواضيع جديدة ومفيدة وغير مستهلكة.`;
+  const task = input.news
+    ? `اكتب 4 بوستات LinkedIn عن الخبر أعلاه.\nكل بوست يتناول زاوية مختلفة تماماً منه.`
+    : input.topic
+      ? `اكتب 4 بوستات LinkedIn عن الموضوع التالي: "${input.topic}"\nكل بوست يتناول زاوية مختلفة تماماً من نفس الموضوع.`
+      : `اكتب 4 بوستات LinkedIn جديدة، كل واحد عن موضوع مختلف يهم جمهور التخصص، بمواضيع جديدة ومفيدة وغير مستهلكة.`;
 
   const layout = input.layout && input.layout.count >= 5 ? `\nالشكل البصري كما في نصوص المستخدم: ${describeLayout(input.layout)}.` : '';
   const shapes = input.shapes?.length
@@ -423,10 +437,12 @@ export function isOwnOpener(text: string, openers: string[]): boolean {
  * أهداف شكل بصري لكل بوست في الجولة، مأخوذة من نصوص المستخدم نفسها:
  * الوصف النثري للإحصاءات جعل نماذج Flash تكتب إما أسطراً متقطعة أو فقرات طويلة؛ الأرقام لكل بوست أدق.
  */
-export function shapeTargets(own: Post[], seed: number, n = 4): string[] {
-  // نستبعد الشواذ (قوائم طويلة جداً أو فقرات مقالية تتجاوز 170 حرفاً للسطر) كي لا تصبح هدفاً
+export function shapeTargets(own: Post[], seed: number, n = 4, opts?: { allowLists?: boolean }): string[] {
+  // نستبعد الشواذ (قوائم طويلة جداً أو فقرات مقالية تتجاوز 170 حرفاً للسطر) كي لا تصبح هدفاً،
+  // والقوائم كلها إذا كان المستخدم قد رفض "نظام النقاط"
   const pool = own.filter((p) => {
     const lens = lineLengths(p.content);
+    if (opts?.allowLists === false && layoutOf(p.content) === 'list') return false;
     return p.content.trim().length >= 20 && lens.length <= 12 && Math.max(...lens) <= 170;
   });
   if (pool.length < n) return [];
@@ -535,13 +551,15 @@ export function buildLearnUser(input: LearnInput): string {
 
 // ---------------------------------------------------------------- التحليل والتعديل
 
-export const DISLIKE_SYSTEM = `أنت محرر محتوى LinkedIn خبير بالسوق السعودي. يرفض المستخدم بوستاً مولّداً، ومهمتك تشخيص السبب الأرجح بدقة وتحويله إلى قاعدة تجنب عامة تفيد كل البوستات القادمة. كن محدداً: "نبرة وعظية في الخاتمة" أفضل من "أسلوب سيئ".`;
+export const DISLIKE_SYSTEM = `أنت محرر محتوى LinkedIn خبير بالسوق السعودي. يرفض المستخدم بوستاً مولّداً، ومهمتك تشخيص السبب بدقة وتحويله إلى قواعد تجنب عامة تفيد كل البوستات القادمة. كن محدداً: "نبرة وعظية في الخاتمة" أفضل من "أسلوب سيئ". إذا اختار المستخدم عدة أسباب فاكتب قاعدة مستقلة لكل سبب مختلف (حتى ثلاث)، وإلا فقاعدة واحدة.`;
 
-export function buildDislikeUser(post: Post, profileSummary: string | null, avoidRules: string[], userReason?: string): string {
+export function buildDislikeUser(post: Post, profileSummary: string | null, avoidRules: string[], userReasons: string[] = []): string {
   const ctx = [
     profileSummary ? `ملخص أسلوب المستخدم: ${profileSummary}` : '',
     avoidRules.length ? `قواعد تجنب حالية (لا تكررها حرفياً): ${avoidRules.join(' | ')}` : '',
-    userReason ? `سبب الرفض كما قاله المستخدم بنفسه: "${userReason}" — اجعل القاعدة تترجم هذا السبب تحديداً إلى تعليمات كتابة` : '',
+    userReasons.length
+      ? `أسباب الرفض كما اختارها المستخدم بنفسه: ${userReasons.map((r) => `"${r}"`).join('، ')} — اجعل القواعد تترجم هذه الأسباب تحديداً إلى تعليمات كتابة، قاعدة لكل سبب`
+      : '',
   ]
     .filter(Boolean)
     .join('\n');

@@ -52,7 +52,13 @@ check('labor-law verify applied (HR spec, mock passthrough)', all(p['verified'] 
 s,b,_=req('GET',f'/api/rounds/{rid}'); check('get round', s==200 and len(b['posts'])==4)
 s,b,_=req('GET',f'/round/{rid}',raw=True); check('round page html', s==200 and 'ما عجبني'.encode() in b)
 p0,p1,p2,p3=[p['id'] for p in posts]
-s,b,_=req('POST',f'/api/posts/{p0}/rate',{'liked':False,'reason':'رسمي زيادة'}); check('rate dislike with reason', s==200 and b['post']['rating']=='disliked' and b['roundDone']==False)
+s,b,_=req('POST',f'/api/posts/{p0}/rate',{'liked':False,'reasons':['رسمي أو فصحى أكثر من اللازم','استخدم نظام النقاط والقوائم وأنا ما أبيه']}); check('rate dislike with several reasons', s==200 and b['post']['rating']=='disliked' and b['roundDone']==False)
+s,b,_=req('GET','/api/rules?kind=avoid'); check('"no lists" reason becomes an avoid rule immediately', any('النقاط' in r['text'] and r['source']=='manual' for r in b['rules']), [r['text'][:40] for r in b['rules']])
+
+print('== news round ==')
+s,b,_=req('POST','/api/rounds',{'news':{'text':'أعلنت شركة تجريبية عن أداة جديدة للمبرمجين تختصر وقت البناء'}}); check('news round (mock research)', s==200 and len(b['posts'])==4 and b['round']['news'] and b['round']['news']['headline'] and b['round']['topic']==b['round']['news']['headline'], (b.get('round') or {}).get('news') if s==200 else b)
+s,b,_=req('POST','/api/rounds',{'news':{}}); check('news without text or image 400', s==400, b)
+s,b,_=req('GET',f"/round/{rid}",raw=True); check('round page still renders', s==200)
 s,b,_=req('PATCH',f'/api/posts/{p1}',{'content':'نص معدّل يدوياً للاختبار من المستخدم'}); check('manual edit keeps original', s==200 and b['post']['originalContent'] and b['post']['content'].startswith('نص معدّل'))
 s,b,_=req('POST',f'/api/posts/{p1}/edit',{'instruction':'خله أقصر'}); check('ai edit', s==200 and b['post']['content'].startswith('[معدّل]'), b.get('summary'))
 
@@ -88,7 +94,7 @@ s,b,_=req('GET','/api/rules?kind=image_style'); check('learned image style rule 
 s,b,_=req('GET','/api/rules?kind=image_avoid'); check('learned image avoid rule from dislike', any(r['source']=='learned' for r in b['rules']))
 s,b,_=req('GET','/api/profile'); check('profile relearned after round', s==200 and b['profile'] and b['profile']['version']>=2, (b['profile'] or {}).get('version'))
 s,b,_=req('POST','/api/profile'); check('manual relearn bumps version', s==200 and b['profile']['version']>=3)
-s,b,_=req('GET','/api/state'); check('state after round', b['stats']['liked']==3 and b['stats']['own']==1 and b['stats']['disliked']==1 and b['stats']['rounds']==1 and b['stats']['profileVersion']>=3, b['stats'])
+s,b,_=req('GET','/api/state'); check('state after round', b['stats']['liked']==3 and b['stats']['own']==1 and b['stats']['disliked']==1 and b['stats']['rounds']==2 and b['stats']['profileVersion']>=3, b['stats'])
 
 print('== rules / posts crud ==')
 s,b,_=req('POST','/api/rules',{'kind':'golden','text':'قاعدة اختبار'}); check('add rule', s==201); rid2=b['rule']['id']

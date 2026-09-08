@@ -11,7 +11,7 @@ import {
   recentTopics,
   ruleTexts,
 } from '@/lib/db/repo';
-import type { Post, Round } from '@/lib/types';
+import type { NewsBrief, Post, Round } from '@/lib/types';
 import { AIError, structuredCall } from './gemini';
 import { GenerationSchema } from './schemas';
 import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, ownOpeners, selectExamples, shapeTargets, stripCopiedOpener } from './prompts';
@@ -22,11 +22,11 @@ export interface GeneratedRound {
   posts: Post[];
 }
 
-/** توليد جولة جديدة من 4 بوستات وحفظها */
-export async function generateRound(topicInput?: string | null): Promise<GeneratedRound> {
+/** توليد جولة جديدة من 4 بوستات وحفظها؛ عن موضوع حر، أو عن خبر بُحث عنه مسبقاً (news) */
+export async function generateRound(topicInput?: string | null, news?: NewsBrief | null): Promise<GeneratedRound> {
   const spec = getSpec();
   if (!spec) throw new AIError('أكمل الإعداد الأولي أولاً', 'config');
-  const topic = topicInput?.trim() ? topicInput.trim().slice(0, 200) : null;
+  const topic = news ? news.headline.slice(0, 200) : topicInput?.trim() ? topicInput.trim().slice(0, 200) : null;
 
   const liked = listPostsByRating('liked', 80);
   const disliked = listDislikedWithReasons(4);
@@ -35,6 +35,8 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
   const avoidRules = ruleTexts('avoid');
   const roundsSoFar = countRounds();
   const exploratory = explorationCount(countByRating('liked'), roundsSoFar);
+  // رفض المستخدم "نظام النقاط" (قاعدة تجنب تذكر النقاط أو القوائم) → لا نقترح شكل قائمة لأي بوست
+  const allowLists = !avoidRules.some((r) => /نقاط|قوائم/.test(r));
 
   // شكل المستخدم البصري (أسطر قصيرة، أسطر فارغة) يُحسب من نصوصه هو لا من المولّد
   const own = liked.filter((p) => p.kind === 'own');
@@ -48,7 +50,8 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
     roundNumber: roundsSoFar + 1,
     layout: own.length >= 5 ? corpusStats(own) : null,
     // شكل مستهدف لكل بوست من نصوص المستخدم نفسها، يتغير مع رقم الجولة
-    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4) : [],
+    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4, { allowLists }) : [],
+    news: news ?? null,
   });
 
   const { data, usage, model } = await structuredCall({
@@ -78,7 +81,7 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
     drafts.map((p) => ({ topic: p.topic, content: p.content })),
   );
 
-  const round = createRound({ topic, exploratory, model, usage });
+  const round = createRound({ topic, exploratory, model, usage, news: news ?? null });
   const posts = drafts.map((p, i) => {
     const v = verification.get(i);
     return insertPost({

@@ -134,4 +134,9 @@ CREATE TABLE IF NOT EXISTS events (
 );
 `,
   },
+  {
+    // ملخص الخبر ومصادره عندما تُكتب الجولة عن خبر (JSON من نوع NewsBrief)
+    name: '002_rounds_news',
+    sql: `ALTER TABLE rounds ADD COLUMN news_json TEXT;`,
+  },
 ];
