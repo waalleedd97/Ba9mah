@@ -367,6 +367,58 @@ function describeShape(p: Post, i: number): string {
   return `بوست ${i}: ${lens.length} أسطر بأطوال تقريبية ${lens.join('، ')} حرفاً${kind === 'paragraph' ? ' (أحدها فقرة من جملتين أو ثلاث)' : ' (كلها جمل قصيرة)'}`;
 }
 
+/** يضغط الحروف المكررة (اسلمممممم → اسلمم) كي تتطابق صيغ اللازمة الواحدة */
+const squeeze = (s: string) => normalizeText(s).replace(/(.)\1{2,}/g, '$1$1');
+
+/** الأسطر الافتتاحية لنصوص المستخدم (مطبّعة ومضغوطة) لكشف نسخها حرفياً في المولَّد أو في ملف الأسلوب */
+export function ownOpeners(own: Post[]): string[] {
+  const out = new Set<string>();
+  for (const p of own) {
+    const first = p.content.split('\n').map((l) => l.trim()).find(Boolean);
+    const key = first ? squeeze(first) : '';
+    if (key.length >= 5) out.add(key);
+  }
+  return [...out];
+}
+
+function matchesOpener(text: string, openers: string[]): boolean {
+  const key = squeeze(text);
+  if (key.length < 5) return false;
+  return openers.some((o) => o === key || (key.length >= 8 && (o.startsWith(key) || key.startsWith(o))));
+}
+
+/**
+ * يحذف السطر الأول من بوست مولَّد إذا كان نسخة حرفية (أو محوّرة) من افتتاحية للمستخدم:
+ * النموذج يعيد "اسلمممم 🤯🔥" في كل جولة رغم المنع، والبوست بعد حذفها يقف وحده غالباً.
+ */
+export function stripCopiedOpener(content: string, openers: string[]): { content: string; stripped: string | null } {
+  const lines = content.split('\n');
+  const idx = lines.findIndex((l) => l.trim());
+  if (idx < 0) return { content, stripped: null };
+  const first = lines[idx].trim();
+  if (!matchesOpener(first, openers)) return { content, stripped: null };
+  const rest = lines
+    .slice(idx + 1)
+    .join('\n')
+    .replace(/^\s+/, '');
+  if (rest.split('\n').filter((l) => l.trim()).length < 2) return { content, stripped: null };
+  return { content: rest, stripped: first };
+}
+
+/** يحذف من بند في ملف الأسلوب أي قوسين يقتبسان افتتاحية حرفية من نصوص المستخدم */
+export function scrubOwnLines(text: string, openers: string[]): string {
+  const out = text.replace(/\s*[(（][^)）]*[)）]/g, (seg) => {
+    const inner = seg.replace(/^[\s(（]+|[)）]+$/g, '');
+    return inner.split(/\s*\/\s*|\s*\|\s*|،\s*/).some((part) => matchesOpener(part, openers)) ? '' : seg;
+  });
+  return out.replace(/\s{2,}/g, ' ').trim();
+}
+
+/** هل هذا البند مجرد نسخة من افتتاحية للمستخدم (مثل "اسلممممم" في قائمة المفردات)؟ */
+export function isOwnOpener(text: string, openers: string[]): boolean {
+  return matchesOpener(text, openers);
+}
+
 /**
  * أهداف شكل بصري لكل بوست في الجولة، مأخوذة من نصوص المستخدم نفسها:
  * الوصف النثري للإحصاءات جعل نماذج Flash تكتب إما أسطراً متقطعة أو فقرات طويلة؛ الأرقام لكل بوست أدق.

@@ -16,7 +16,7 @@ import {
 import type { StyleProfile } from '@/lib/types';
 import { structuredCall, systemText } from './gemini';
 import { StyleProfileSchema } from './schemas';
-import { LEARN_SYSTEM, buildLearnUser, buildOwnCorpusBlock, renderProfileMarkdown } from './prompts';
+import { LEARN_SYSTEM, buildLearnUser, buildOwnCorpusBlock, isOwnOpener, ownOpeners, renderProfileMarkdown, scrubOwnLines } from './prompts';
 
 /** الحد الأدنى من التقييمات الجديدة قبل إعادة استخلاص الملف تلقائياً */
 export const MIN_NEW_RATINGS = 3;
@@ -71,6 +71,11 @@ export async function relearnProfile(trigger: 'auto' | 'manual', opts?: { force?
         effort: 'high',
         maxTokens: 8000,
       });
+
+      // الملف لا يقتبس افتتاحيات المستخدم حرفياً: الكاتب ينسخها كما هي فتصير لازمة في كل جولة
+      const openers = ownOpeners(own.posts);
+      data.hooks = data.hooks.map((h) => scrubOwnLines(h, openers)).filter(Boolean);
+      data.vocabulary = data.vocabulary.filter((v) => !isOwnOpener(v, openers));
 
       const profile = insertProfile({
         markdown: renderProfileMarkdown(data),

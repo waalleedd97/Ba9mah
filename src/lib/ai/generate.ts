@@ -14,7 +14,7 @@ import {
 import type { Post, Round } from '@/lib/types';
 import { AIError, structuredCall } from './gemini';
 import { GenerationSchema } from './schemas';
-import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, selectExamples, shapeTargets } from './prompts';
+import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, ownOpeners, selectExamples, shapeTargets, stripCopiedOpener } from './prompts';
 import { verifyIfNeeded } from './labor-law';
 
 export interface GeneratedRound {
@@ -61,7 +61,16 @@ export async function generateRound(topicInput?: string | null): Promise<Generat
     mockHint: topic ?? undefined,
   });
 
-  const drafts = data.posts.filter((p) => p.content.trim().length > 0).slice(0, 4);
+  // لازمة منسوخة حرفياً من افتتاحيات المستخدم (مثل "اسلمممم 🤯🔥" في كل جولة) تُحذف من أول البوست
+  const openers = ownOpeners(own);
+  const drafts = data.posts
+    .filter((p) => p.content.trim().length > 0)
+    .slice(0, 4)
+    .map((p) => {
+      const r = stripCopiedOpener(p.content, openers);
+      if (r.stripped) console.log(`[generate] removed copied opener: ${r.stripped}`);
+      return r.stripped ? { ...p, content: r.content } : p;
+    });
   if (drafts.length === 0) throw new AIError('لم يرجع النموذج أي بوست صالح', 'parse');
 
   const verification = await verifyIfNeeded(
