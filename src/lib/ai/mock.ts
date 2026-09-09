@@ -45,6 +45,7 @@ export function mockFor(kind: string, hint?: string): unknown {
       return { reason: 'نص كثير وصغير داخل الصورة', category: 'clutter', avoid_rule: 'تجنب النصوص الكثيرة الصغيرة داخل الصورة' };
     case 'analyze_image_like':
       return { what_worked: 'عنوان كبير واضح وخلفية نظيفة', style_rule: 'عنوان واحد كبير على خلفية نظيفة', reusable: true };
+    case 'news_polish':
     case 'edit':
       return { content: `[معدّل] ${hint ?? ''}`.trim(), changes_summary: 'تعديل وهمي في وضع الاختبار' };
     case 'verify':
