@@ -50,7 +50,8 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
     roundNumber: roundsSoFar + 1,
     layout: own.length >= 5 ? corpusStats(own) : null,
     // شكل مستهدف لكل بوست من نصوص المستخدم نفسها، يتغير مع رقم الجولة
-    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4, { allowLists }) : [],
+    // جولة خبر واحد: أشكال أطول (قصة) لأن الخبر يُحكى لا يُلخَّص
+    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4, { allowLists, story: Boolean(news && !news.query) }) : [],
     news: news ?? null,
   });
 

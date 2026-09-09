@@ -220,11 +220,16 @@ export function buildGenerationUser(input: GenerationUserInput): string {
     const sources = input.news.sources.length ? `\nالمصادر: ${input.news.sources.map((s) => `${s.title} (${s.url})`).join(' | ')}` : '';
     const task = input.news.query
       ? `هذه آخر التطورات في موضوع "${input.news.query}" كما جُمعت اليوم. اكتب البوستات الأربعة كل واحد عن تطور مختلف من الملخص، وإن كان تطور واحد مهيمناً فبزوايا مختلفة عنه. اذكر الجهة أو التاريخ حين يهم القارئ. `
-      : `اكتب البوستات الأربعة عن هذا الخبر تحديداً، كل بوست بزاوية مختلفة: تعليق سريع كمن قرأه للتو، ماذا يعني عملياً لجمهور التخصص في السعودية، رأي أو تحفّظ يخالف الحماس السائد، ودرس أو خطوة عملية مستفادة. `;
+      : `اكتب البوستات الأربعة عن هذا الخبر تحديداً، كل بوست بزاوية مختلفة:\n` +
+        `1) القصة كاملة كما تحكيها لصديق ما سمع بها: من هو صاحب الخبر، وش صار بالضبط، وش قال حرفياً (ترجم أهم جملة أو جملتين له بين علامتي اقتباس)، ثم ليش هذا يهم، ثم رأيك أنت في آخر سطر.\n` +
+        `2) موقفك الصريح: تصدقه؟ مبالغة؟ وش الذي يقنعك ووش الذي لا يقنعك، بحجة من الحقائق.\n` +
+        `3) وش يعني الخبر عملياً لمبرمج أو رائد أعمال في السعودية يبني على هذه التقنية.\n` +
+        `4) ملاحظة ذكية أو ساخرة أو سؤال حقيقي يحيّرك، بأسلوبه.\n`;
     sections.push(
       `=== ${input.news.query ? 'آخر أخبار يريد المستخدم الكتابة عنها' : 'خبر يريد المستخدم الكتابة عنه'} ===\nالعنوان: ${input.news.headline}\n${input.news.brief}${sources}\n` +
         task +
-        `اعتمد على الحقائق الواردة أعلاه فقط ولا تختلق أرقاماً أو تفاصيل أو تصريحات. لا تنسخ الصياغة الصحفية؛ اكتب كما يكتب المستخدم عن خبر قرأه. ` +
+        `الخبر عند البشر يُحكى لا يُلخَّص: الناس على LinkedIn تعيد رواية القصة بتفاصيلها وتصريحاتها ثم تعطي رأيها، لذلك البوست الإخباري أطول من بوستات المستخدم المعتادة: من 5 إلى 10 أسطر، فيها سرد متصل وليست رؤوس أقلام ولا سطراً تلغرافياً لكل فكرة. ` +
+        `اعتمد على الحقائق الواردة أعلاه فقط ولا تختلق أرقاماً أو تفاصيل أو تصريحات؛ ما ورد تحت "غير مؤكد" انسبه لقائله بصيغة "يقول". لا تنسخ الصياغة الصحفية؛ اكتب كما يكتب المستخدم عن خبر قرأه، بلهجته وردة فعله الصادقة (استغراب، قلق، سخرية) كما تظهر في نصوصه. ` +
         `اذكر رابط المصدر في بوست واحد على الأكثر إن ناسب أسلوبه.`,
     );
   }
@@ -512,16 +517,19 @@ export function isOwnOpener(text: string, openers: string[]): boolean {
  * أهداف شكل بصري لكل بوست في الجولة، مأخوذة من نصوص المستخدم نفسها:
  * الوصف النثري للإحصاءات جعل نماذج Flash تكتب إما أسطراً متقطعة أو فقرات طويلة؛ الأرقام لكل بوست أدق.
  */
-export function shapeTargets(own: Post[], seed: number, n = 4, opts?: { allowLists?: boolean }): string[] {
+export function shapeTargets(own: Post[], seed: number, n = 4, opts?: { allowLists?: boolean; story?: boolean }): string[] {
   // نستبعد الشواذ (قوائم طويلة جداً أو فقرات مقالية تتجاوز 170 حرفاً للسطر) كي لا تصبح هدفاً،
   // والقوائم كلها إذا كان المستخدم قد رفض "نظام النقاط"
-  const pool = own.filter((p) => {
+  const base = own.filter((p) => {
     const lens = lineLengths(p.content);
     if (opts?.allowLists === false && layoutOf(p.content) === 'list') return false;
     // وسيط طول السطر أقل من 25 حرفاً = تعداد أسماء أو كلمات مبتورة؛ هدفٌ كهذا يُنتج بوستاً "مقطّعاً" يرفضه المستخدم
     if (lens.length >= 3 && median(lens) < 25) return false;
     return p.content.trim().length >= 20 && lens.length <= 12 && Math.max(...lens) <= 170;
   });
+  // جولة خبر: الخبر يُحكى، فأهداف الشكل من نصوص المستخدم الأطول (4 أسطر و250 حرفاً فأكثر) لا من ردود فعله القصيرة
+  const story = opts?.story ? base.filter((p) => lineLengths(p.content).length >= 4 && p.content.trim().length >= 250 && layoutOf(p.content) !== 'list') : [];
+  const pool = story.length >= n ? story : base;
   if (pool.length < n) return [];
   const order = seededOrder(pool.length, seed).map((i) => pool[i]);
   const picked: Post[] = [];
@@ -566,14 +574,19 @@ function bansWord(text: string, word: string): boolean {
 export function contradictsCorpus(text: string, s: CorpusStats, vocabulary: string[] = []): boolean {
   const bans = BAN_WORDS.test(text);
   const shortWriter = s.shortShare >= 0.3 || s.allShortShare >= 0.15;
-  if (shortWriter && /(أسطر|الأسطر|السطور|سطور|جمل|الجمل)\s+(قصيرة|القصيرة|مقطعة|المقطعة|متقطعة|المتقطعة|مبتورة|المبتورة|مقتضبة|المقتضبة|مفردة|المفردة|منفصلة|المنفصلة)|أسلوب التغريدات|كالتغريدات/.test(text) && bans) return true;
+  // منع "الأسطر القصيرة" يخالف نصوصه؛ أما منع الأسطر "من كلمتين أو ثلاث" فتحديد دقيق للمبتور لا للقصير
+  const fragmentsOnly = /كلمتين|كلمات|كلمة واحدة/.test(text);
+  if (shortWriter && !fragmentsOnly && /(أسطر|الأسطر|السطور|سطور|جمل|الجمل)\s+(قصيرة|القصيرة|مقطعة|المقطعة|متقطعة|المتقطعة|مبتورة|المبتورة|مقتضبة|المقتضبة|مفردة|المفردة|منفصلة|المنفصلة)|أسلوب التغريدات|كالتغريدات/.test(text) && bans) return true;
   if (shortWriter && /فقرات?\s+(سردية|مترابطة|متصلة|متماسكة|كاملة)/.test(text)) return true;
   if (s.blankSepShare >= 0.5 && /سطر فارغ|الأسطر الفارغة|الفراغات|فراغات/.test(text) && bans) return true;
   if (s.emojiShare >= 0.2 && /إيموجي|الإيموجي|الرموز التعبيرية|ايموجي/.test(text) && bans) return true;
   if (s.bulletShare >= 0.15 && /القوائم|قوائم|النقاط|نقاط/.test(text) && bans && !/الطويل|المبالغ|لغير الأدوات|إلا|فقط|مبتورة|كلمتين/.test(text)) return true;
   for (const v of vocabulary) {
     const w = v.trim();
-    if (w.length >= 3 && bans && bansWord(text, w) && !/في كل بوست|حشو|كحشوة|تناسب السياق/.test(text)) return true;
+    if (w.length < 3 || !bans) continue;
+    // بند يفضّل مفردة المستخدم ("استخدم الكلاود"، "بدل 'الكلاود'") ليس منعاً لها
+    const preferred = new RegExp(`(استخدم|استعمل|بدل|بدلاً من|عوضاً عن)\\s*['"«‹“]?${escapeRe(w)}`).test(text);
+    if (!preferred && bansWord(text, w) && !/في كل بوست|حشو|كحشوة|تناسب السياق/.test(text)) return true;
   }
   return false;
 }
