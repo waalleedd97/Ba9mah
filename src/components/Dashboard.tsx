@@ -23,10 +23,11 @@ interface Props {
 export function Dashboard({ stats, profile, goldenRules, currentRound, recent, suggestions, learning }: Props) {
   const router = useRouter();
   const toast = useToast();
-  const [mode, setMode] = useState<'topic' | 'news'>('topic');
+  const [mode, setMode] = useState<'topic' | 'news' | 'search'>('topic');
   const [topic, setTopic] = useState('');
   const [newsText, setNewsText] = useState('');
   const [newsImage, setNewsImage] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -36,9 +37,18 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
       toast.error('أعطني الخبر أولاً', 'الصق نصه أو رابطه، أو ارفع صورته');
       return;
     }
+    if (mode === 'search' && searchQuery.trim().length < 2) {
+      toast.error('اكتب الموضوع أولاً', 'مثل: Claude Code، بوابات الدفع في السعودية، الذكاء الاصطناعي في التعليم');
+      return;
+    }
     setBusy(true);
     try {
-      const json = mode === 'news' ? { news: { text: newsText.trim() || undefined, image: newsImage ?? undefined } } : { topic: topic.trim() || undefined };
+      const json =
+        mode === 'news'
+          ? { news: { text: newsText.trim() || undefined, image: newsImage ?? undefined } }
+          : mode === 'search'
+            ? { newsSearch: { query: searchQuery.trim() } }
+            : { topic: topic.trim() || undefined };
       const { round } = await api<{ round: Round }>('/api/rounds', { method: 'POST', json });
       router.push(`/round/${round.id}`);
     } catch (e) {
@@ -55,6 +65,7 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
   }
 
   if (busy) {
+    if (mode === 'search') return <GenerationLoader title="يتصفح الويب ويجمع آخر أخبار الموضوع ثم يكتب" subtitle={`آخر أخبار: ${searchQuery.trim()}`} />;
     if (mode === 'news') return <GenerationLoader title="يقرأ الخبر ويتأكد من حقائقه ثم يكتب" subtitle={newsText.trim() ? newsText.trim().slice(0, 80) : 'يقرأ الخبر من الصورة'} />;
     return <GenerationLoader title={stats.rounds > 0 ? 'يكتب بوستات أقرب لذوقك' : 'يكتب أول بوستاتك'} subtitle={topic.trim() ? `الموضوع: ${topic.trim()}` : `${stats.liked} مثال ناجح · ${stats.goldenRules} قاعدة ذهبية${profile ? ` · ملف الأسلوب v${profile.version}` : ''}`} />;
   }
@@ -97,12 +108,24 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
 
       <section className="card card-lg card-accent mb-2 fade-up">
         <SectionTitle icon="sparkles">جولة جديدة</SectionTitle>
-        <div className="tabs mb-2" style={{ maxWidth: 360 }}>
+        <div className="tabs mb-2" style={{ maxWidth: 480 }}>
           <button type="button" className={`tab ${mode === 'topic' ? 'active' : ''}`} onClick={() => setMode('topic')}><Icon name="target" size={15} /> موضوع</button>
           <button type="button" className={`tab ${mode === 'news' ? 'active' : ''}`} onClick={() => setMode('news')}><Icon name="globe" size={15} /> خبر</button>
+          <button type="button" className={`tab ${mode === 'search' ? 'active' : ''}`} onClick={() => setMode('search')}><Icon name="trending-up" size={15} /> آخر الأخبار</button>
         </div>
 
-        {mode === 'topic' ? (
+        {mode === 'search' ? (
+          <>
+            <input className="input input-lg" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="موضوع تبي آخر أخباره؟ مثل: Claude Code، بوابات الدفع في السعودية، الذكاء الاصطناعي في التعليم" onKeyDown={(e) => e.key === 'Enter' && generate()} maxLength={200} />
+            <div className="row mt-2" style={{ gap: 8 }}>
+              {suggestions.map((s) => (
+                <button key={s} type="button" className={`chip ${searchQuery === s ? 'active' : ''}`} onClick={() => setSearchQuery(searchQuery === s ? '' : s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : mode === 'topic' ? (
           <>
             <input className="input input-lg" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="موضوع معيّن؟ اتركه فاضياً وبصمة يختار مواضيع جديدة" onKeyDown={(e) => e.key === 'Enter' && generate()} maxLength={200} />
             <div className="row mt-2" style={{ gap: 8 }}>
@@ -144,7 +167,11 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
 
         <div className="row between mt-3">
           <span className="subtle row" style={{ gap: 6 }}>
-            {mode === 'news' ? (
+            {mode === 'search' ? (
+              <>
+                <Icon name="trending-up" size={14} /> يجمع آخر الأخبار من الويب ويلخص أهم التطورات ثم يكتب عنها
+              </>
+            ) : mode === 'news' ? (
               <>
                 <Icon name="globe" size={14} /> يقرأ الروابط ويبحث في الويب ثم يكتب بزوايا مختلفة
               </>
@@ -156,8 +183,8 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
               </>
             )}
           </span>
-          <Button variant="primary" size="lg" onClick={generate} icon={mode === 'news' ? 'globe' : 'sparkles'}>
-            {mode === 'news' ? 'ابحث واكتب 4 بوستات' : 'ولّد 4 بوستات'}
+          <Button variant="primary" size="lg" onClick={generate} icon={mode === 'search' ? 'trending-up' : mode === 'news' ? 'globe' : 'sparkles'}>
+            {mode === 'search' ? 'اجمع آخر الأخبار واكتب 4 بوستات' : mode === 'news' ? 'ابحث واكتب 4 بوستات' : 'ولّد 4 بوستات'}
           </Button>
         </div>
       </section>

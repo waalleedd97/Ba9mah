@@ -1,6 +1,8 @@
 import 'server-only';
 import type { NewsBrief } from '@/lib/types';
 import { getSpec } from '@/lib/db/repo';
+import { getEnv } from '@/lib/env';
+import { normalizeText } from '@/lib/text';
 import { AIError, imageBlock, systemText, textCall, type NewsSource, type UserBlock } from './gemini';
 
 export interface NewsInput {
@@ -158,4 +160,173 @@ export async function researchNews(input: NewsInput): Promise<NewsBrief> {
     sources.push(s);
   }
   return { headline, brief, sources: sources.slice(0, 8), searched, note };
+}
+
+// ---------------------------------------------------------------- آخر أخبار موضوع
+
+export interface NewsItem {
+  title: string;
+  url: string;
+  source: string;
+  /** ISO date أو فارغ */
+  date: string;
+  snippet: string;
+}
+
+const MAX_ITEMS = 12;
+const MAX_AGE_DAYS = 45;
+const DIGEST_ARTICLES = 3;
+
+function unescapeXml(s: string): string {
+  return s
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tag(block: string, name: string): string {
+  const m = new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i').exec(block);
+  return m ? unescapeXml(m[1]) : '';
+}
+
+/** روابط Bing تمر عبر apiclick.aspx وتحمل الرابط الحقيقي في المعامل url */
+function realUrl(link: string): string {
+  try {
+    const u = new URL(link);
+    if (/bing\.com$/i.test(u.hostname) && u.searchParams.get('url')) return u.searchParams.get('url')!;
+  } catch {
+    /* رابط غير صالح: يُعاد كما هو */
+  }
+  return link;
+}
+
+/** محلل RSS خفيف يكفي لخلاصات الأخبار (بلا مكتبة XML) */
+export function parseRss(xml: string): NewsItem[] {
+  const items: NewsItem[] = [];
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
+    const block = m[1];
+    const title = tag(block, 'title');
+    const link = realUrl(tag(block, 'link'));
+    if (!title || !link) continue;
+    const pub = tag(block, 'pubDate');
+    const d = pub ? new Date(pub) : null;
+    items.push({
+      title,
+      url: link,
+      source: tag(block, 'source') || tag(block, 'News:Source') || hostnameOf(link),
+      date: d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : '',
+      snippet: tag(block, 'description').slice(0, 300),
+    });
+  }
+  return items;
+}
+
+async function fetchRss(url: string): Promise<NewsItem[]> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(12_000),
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; BasmaBot/1.0; +https://basma.njd-services.net)', accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.5' },
+    });
+    if (!res.ok) return [];
+    return parseRss((await res.text()).slice(0, 2_000_000));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * آخر الأخبار عن موضوع من خلاصات الأخبار العامة (بلا مفاتيح): Bing News ثم Google News،
+ * دمج وحذف المكرر، الأحدث أولاً، وخلال آخر 45 يوماً.
+ */
+export async function searchLatestNews(query: string): Promise<NewsItem[]> {
+  if (getEnv().mockAi) {
+    return [0, 1, 2].map((i) => ({ title: `خبر تجريبي ${i + 1} عن ${query}`, url: `https://example.com/news/${i + 1}`, source: 'مصدر تجريبي', date: new Date().toISOString().slice(0, 10), snippet: 'مقتطف وهمي في وضع الاختبار' }));
+  }
+  const q = encodeURIComponent(query.trim());
+  const [bingAr, bingEn, google] = await Promise.all([
+    fetchRss(`https://www.bing.com/news/search?q=${q}&format=rss&mkt=ar-SA`),
+    fetchRss(`https://www.bing.com/news/search?q=${q}&format=rss&mkt=en-US`),
+    fetchRss(`https://news.google.com/rss/search?q=${q}%20when%3A45d&hl=ar&gl=SA&ceid=SA:ar`),
+  ]);
+  const seen = new Set<string>();
+  const cutoff = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const merged: NewsItem[] = [];
+  for (const it of [...bingAr, ...bingEn, ...google]) {
+    const key = normalizeText(it.title).slice(0, 60);
+    if (!key || seen.has(key)) continue;
+    if (it.date && new Date(it.date).getTime() < cutoff) continue;
+    seen.add(key);
+    merged.push(it);
+  }
+  merged.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return merged.slice(0, MAX_ITEMS);
+}
+
+const DIGEST_SYSTEM = `أنت محرر أخبار تقنية وأعمال تحضّر ملخصاً لكاتب محتوى LinkedIn سعودي. يعطيك المستخدم موضوعاً وقائمة بآخر الأخبار عنه من خلاصات الأخبار (عناوين، مصادر، تواريخ، مقتطفات) ونصوص بعض المقالات. إن كان البحث في الويب متاحاً لك فاستعن به للتأكد وإكمال ما ينقص.
+
+اختر أهم 3 إلى 5 تطورات حديثة فعلاً (الأحدث والأكثر أثراً على القارئ التقني ورائد الأعمال في السعودية)، وتجاهل القديم والمكرر والإعلاني والتحليلات الإنشائية.
+
+اكتب بالعربية بهذا الشكل بالضبط وبلا مقدمات:
+العنوان: آخر أخبار <الموضوع>: <أهم تطور في نصف سطر>
+التطورات:
+1. <التطور> — <الحقائق والأرقام المؤكدة> (<المصدر>، <التاريخ>)
+2. ...
+غير مؤكد: ما لم تجد له مصدراً، أو "لا شيء"
+
+لا تختلق أرقاماً أو تصريحات. إذا كانت الأخبار كلها هامشية فقل ذلك.`;
+
+/** يبحث عن آخر أخبار موضوع ويلخص أهم تطوراته قبل كتابة جولة عنها */
+export async function researchTopic(query: string): Promise<NewsBrief> {
+  const topic = query.trim();
+  if (topic.length < 2) throw new AIError('اكتب الموضوع الذي تريد آخر أخباره', 'config');
+  const items = await searchLatestNews(topic);
+  if (items.length === 0) throw new AIError(`ما لقيت أخباراً حديثة عن "${topic}"، جرّب صياغة أخرى أو موضوعاً أوسع`, 'unavailable');
+
+  // نصوص أهم المقالات (روابط Bing مباشرة؛ روابط Google News مشفّرة لا تُقرأ)
+  const readable = items.filter((it) => !/news\.google\.com/i.test(it.url)).slice(0, DIGEST_ARTICLES);
+  const articles = getEnv().mockAi ? [] : (await Promise.all(readable.map(async (it) => ({ it, article: await fetchArticle(it.url) })))).filter((a) => a.article);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const list = items.map((it, i) => `${i + 1}. ${it.title} | ${it.source}${it.date ? ` | ${it.date}` : ''}${it.snippet ? `\n   ${it.snippet}` : ''}`).join('\n');
+  const parts: UserBlock[] = [
+    {
+      text:
+        `التخصص الذي يكتب فيه المستخدم: ${getSpec() || 'ريادة الأعمال والتقنية'}\nتاريخ اليوم: ${today}\nالموضوع: ${topic}\n\n=== آخر الأخبار من الخلاصات (${items.length}) ===\n${list}` +
+        articles.map(({ it, article }) => `\n\n=== نص المقال: ${it.title} (${it.url}) ===\n${article!.text.slice(0, 5000)}`).join(''),
+    },
+  ];
+  const system = [systemText(DIGEST_SYSTEM)];
+  let result: { text: string; sources: NewsSource[] };
+  let searched = false;
+  try {
+    result = await textCall({ kind: 'news_digest', system, user: parts, effort: 'medium', maxTokens: 3000, search: true, mockHint: topic });
+    searched = true;
+  } catch (err) {
+    console.warn('[news] search unavailable, digesting the feeds only:', err instanceof Error ? err.message : err);
+    result = await textCall({ kind: 'news_digest', system, user: parts, effort: 'medium', maxTokens: 3000, search: false, mockHint: topic });
+  }
+  const { headline, brief } = parseBrief(result.text);
+  if (!brief) throw new AIError('لم أستطع تلخيص الأخبار، جرّب موضوعاً آخر', 'parse');
+  const seen = new Set<string>();
+  const sources: NewsSource[] = [];
+  for (const s of [...items.slice(0, 6).map((it) => ({ title: `${it.source}: ${it.title}`.slice(0, 80), url: it.url })), ...result.sources]) {
+    if (seen.has(s.url)) continue;
+    seen.add(s.url);
+    sources.push(s);
+  }
+  return {
+    headline: headline.startsWith('آخر أخبار') ? headline : `آخر أخبار ${topic}: ${headline}`.slice(0, 200),
+    brief,
+    sources: sources.slice(0, 8),
+    searched,
+    note: searched ? null : `جمعت ${items.length} خبراً من خلاصات الأخبار العامة (Bing وGoogle News) وقرأت ${articles.length} مقالاً؛ بحث Gemini في الويب غير متاح على مفتاحك الحالي (يحتاج فوترة).`,
+    query: topic,
+  };
 }

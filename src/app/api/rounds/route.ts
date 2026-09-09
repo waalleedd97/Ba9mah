@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { handle, ok, readJson, HttpError } from '@/lib/api';
 import { isOnboarded } from '@/lib/db/repo';
 import { generateRound } from '@/lib/ai/generate';
-import { researchNews } from '@/lib/ai/news';
+import { researchNews, researchTopic } from '@/lib/ai/news';
 import { decodeBase64Image } from '@/lib/images/storage';
 
 const MAX_UPLOAD = 8 * 1024 * 1024;
@@ -15,11 +15,19 @@ const Body = z.object({
       image: z.string().max(MAX_UPLOAD * 1.4).optional(),
     })
     .optional(),
+  /** جولة عن آخر أخبار موضوع: يتصفح خلاصات الأخبار ويلخص أهم التطورات ثم يكتب */
+  newsSearch: z.object({ query: z.string().trim().min(2).max(200) }).optional(),
 });
 
 export const POST = handle(async (req) => {
   if (!isOnboarded()) throw new HttpError(409, 'أكمل الإعداد الأولي أولاً');
-  const { topic, news } = await readJson(req, Body);
+  const { topic, news, newsSearch } = await readJson(req, Body);
+
+  if (newsSearch) {
+    const brief = await researchTopic(newsSearch.query);
+    const { round, posts } = await generateRound(brief.headline, brief);
+    return ok({ round, posts });
+  }
 
   if (news) {
     let image: { base64: string; mime: string } | null = null;

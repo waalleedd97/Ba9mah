@@ -63,6 +63,8 @@ export interface NewsBrief {
   /** هل استُخدم البحث في الويب فعلاً؟ (غير متاح على الحصة المجانية) */
   searched: boolean;
   note: string | null;
+  /** عند البحث عن آخر أخبار موضوع: الموضوع الذي طلبه المستخدم */
+  query?: string | null;
 }
 
 export interface Round {
