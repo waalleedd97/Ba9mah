@@ -47,7 +47,9 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
   const goldenRules = ruleTexts('golden');
   const avoidRules = ruleTexts('avoid');
   const roundsSoFar = countRounds();
-  const exploratory = explorationCount(countByRating('liked'), roundsSoFar);
+  // أمر حر قد يطلب أقل من 4 بوستات
+  const count = Math.min(4, Math.max(1, news?.count ?? 4));
+  const exploratory = Math.min(explorationCount(countByRating('liked'), roundsSoFar), Math.max(0, count - 1));
   // رفض المستخدم "نظام النقاط" (قاعدة تجنب تذكر النقاط أو القوائم) → لا نقترح شكل قائمة لأي بوست
   const allowLists = !avoidRules.some((r) => /نقاط|قوائم/.test(r));
 
@@ -64,7 +66,7 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
     layout: own.length >= 5 ? corpusStats(own) : null,
     // شكل مستهدف لكل بوست من نصوص المستخدم نفسها، يتغير مع رقم الجولة
     // جولة خبر واحد: أشكال أطول (قصة) لأن الخبر يُحكى لا يُلخَّص
-    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4, { allowLists, story: Boolean(news && !news.query) }) : [],
+    shapes: own.length >= 5 ? shapeTargets(own, roundsSoFar + 1, 4, { allowLists, story: Boolean(news && !news.query && !news.command) }) : [],
     news: news ?? null,
   });
 
@@ -82,7 +84,7 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
   const openers = ownOpeners(own);
   const drafts = data.posts
     .filter((p) => p.content.trim().length > 0)
-    .slice(0, 4)
+    .slice(0, count)
     .map((p) => {
       const r = stripCopiedOpener(p.content, openers);
       if (r.stripped) console.log(`[generate] removed copied opener: ${r.stripped}`);
@@ -94,7 +96,7 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
   if (drafts.length === 0) throw new AIError('لم يرجع النموذج أي بوست صالح', 'parse');
 
   // جولة خبر واحد: البوست التلغرافي (رؤوس أقلام أو نص هزيل) يُعاد للنموذج ليحكيه سرداً بنفس الحقائق
-  if (news && !news.query) {
+  if (news && !news.query && !news.command) {
     const editSystem = buildEditSystem(spec, profile, goldenRules);
     await Promise.all(
       drafts.map(async (p, i) => {

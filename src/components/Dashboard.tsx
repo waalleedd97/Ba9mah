@@ -23,11 +23,12 @@ interface Props {
 export function Dashboard({ stats, profile, goldenRules, currentRound, recent, suggestions, learning }: Props) {
   const router = useRouter();
   const toast = useToast();
-  const [mode, setMode] = useState<'topic' | 'news' | 'search'>('topic');
+  const [mode, setMode] = useState<'topic' | 'news' | 'search' | 'command'>('topic');
   const [topic, setTopic] = useState('');
   const [newsText, setNewsText] = useState('');
   const [newsImage, setNewsImage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [command, setCommand] = useState('');
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -35,6 +36,10 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
     if (busy) return;
     if (mode === 'news' && !newsText.trim() && !newsImage) {
       toast.error('أعطني الخبر أولاً', 'الصق نصه أو رابطه، أو ارفع صورته');
+      return;
+    }
+    if (mode === 'command' && command.trim().length < 5) {
+      toast.error('اكتب أمرك أولاً', 'مثل: ابحث في النت وش مستجدات الذكاء الاصطناعي اليوم واكتب لي بوستين');
       return;
     }
     if (mode === 'search' && searchQuery.trim().length < 2) {
@@ -46,7 +51,9 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
       const json =
         mode === 'news'
           ? { news: { text: newsText.trim() || undefined, image: newsImage ?? undefined } }
-          : mode === 'search'
+          : mode === 'command'
+            ? { command: command.trim() }
+            : mode === 'search'
             ? { newsSearch: { query: searchQuery.trim() } }
             : { topic: topic.trim() || undefined };
       const { round } = await api<{ round: Round }>('/api/rounds', { method: 'POST', json });
@@ -65,6 +72,7 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
   }
 
   if (busy) {
+    if (mode === 'command') return <GenerationLoader title="يفهم أمرك، يبحث إن لزم، ثم يكتب" subtitle={command.trim().slice(0, 90)} />;
     if (mode === 'search') return <GenerationLoader title="يتصفح الويب ويجمع آخر أخبار الموضوع ثم يكتب" subtitle={`آخر أخبار: ${searchQuery.trim()}`} />;
     if (mode === 'news') return <GenerationLoader title="يقرأ الخبر ويتأكد من حقائقه ثم يكتب" subtitle={newsText.trim() ? newsText.trim().slice(0, 80) : 'يقرأ الخبر من الصورة'} />;
     return <GenerationLoader title={stats.rounds > 0 ? 'يكتب بوستات أقرب لذوقك' : 'يكتب أول بوستاتك'} subtitle={topic.trim() ? `الموضوع: ${topic.trim()}` : `${stats.liked} مثال ناجح · ${stats.goldenRules} قاعدة ذهبية${profile ? ` · ملف الأسلوب v${profile.version}` : ''}`} />;
@@ -108,13 +116,16 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
 
       <section className="card card-lg card-accent mb-2 fade-up">
         <SectionTitle icon="sparkles">جولة جديدة</SectionTitle>
-        <div className="tabs mb-2" style={{ maxWidth: 480 }}>
+        <div className="tabs mb-2" style={{ maxWidth: 560 }}>
           <button type="button" className={`tab ${mode === 'topic' ? 'active' : ''}`} onClick={() => setMode('topic')}><Icon name="target" size={15} /> موضوع</button>
           <button type="button" className={`tab ${mode === 'news' ? 'active' : ''}`} onClick={() => setMode('news')}><Icon name="globe" size={15} /> خبر</button>
           <button type="button" className={`tab ${mode === 'search' ? 'active' : ''}`} onClick={() => setMode('search')}><Icon name="trending-up" size={15} /> آخر الأخبار</button>
+          <button type="button" className={`tab ${mode === 'command' ? 'active' : ''}`} onClick={() => setMode('command')}><Icon name="wand" size={15} /> أمر</button>
         </div>
 
-        {mode === 'search' ? (
+        {mode === 'command' ? (
+          <textarea className="textarea" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="اكتب أمرك كما تكتبه لمساعد: ابحث في النت وش مستجدات الذكاء الاصطناعي اليوم والبزنس والتقنية واكتب لي بوستات، أو: اكتب لي بوستين عن ... بنبرة ساخرة" style={{ minHeight: 96 }} maxLength={1000} />
+        ) : mode === 'search' ? (
           <>
             <input className="input input-lg" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="موضوع تبي آخر أخباره؟ مثل: Claude Code، بوابات الدفع في السعودية، الذكاء الاصطناعي في التعليم" onKeyDown={(e) => e.key === 'Enter' && generate()} maxLength={200} />
             <div className="row mt-2" style={{ gap: 8 }}>
@@ -167,7 +178,11 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
 
         <div className="row between mt-3">
           <span className="subtle row" style={{ gap: 6 }}>
-            {mode === 'search' ? (
+            {mode === 'command' ? (
+              <>
+                <Icon name="wand" size={14} /> يفهم طلبك: كم بوست، أي مواضيع، هل يحتاج بحثاً في الويب، ثم ينفذه
+              </>
+            ) : mode === 'search' ? (
               <>
                 <Icon name="trending-up" size={14} /> يجمع آخر الأخبار من الويب ويلخص أهم التطورات ثم يكتب عنها
               </>
@@ -183,8 +198,8 @@ export function Dashboard({ stats, profile, goldenRules, currentRound, recent, s
               </>
             )}
           </span>
-          <Button variant="primary" size="lg" onClick={generate} icon={mode === 'search' ? 'trending-up' : mode === 'news' ? 'globe' : 'sparkles'}>
-            {mode === 'search' ? 'اجمع آخر الأخبار واكتب 4 بوستات' : mode === 'news' ? 'ابحث واكتب 4 بوستات' : 'ولّد 4 بوستات'}
+          <Button variant="primary" size="lg" onClick={generate} icon={mode === 'command' ? 'wand' : mode === 'search' ? 'trending-up' : mode === 'news' ? 'globe' : 'sparkles'}>
+            {mode === 'command' ? 'نفّذ الأمر' : mode === 'search' ? 'اجمع آخر الأخبار واكتب 4 بوستات' : mode === 'news' ? 'ابحث واكتب 4 بوستات' : 'ولّد 4 بوستات'}
           </Button>
         </div>
       </section>
