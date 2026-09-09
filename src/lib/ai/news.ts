@@ -162,6 +162,56 @@ export async function researchNews(input: NewsInput): Promise<NewsBrief> {
   return { headline, brief, sources: sources.slice(0, 8), searched, note };
 }
 
+// ---------------------------------------------------------------- أمر حر
+
+const COMMAND_SYSTEM = `أنت مساعد بحث لكاتب محتوى LinkedIn سعودي. يعطيك المستخدم أمراً حراً بلغته (مثل: "ابحث في النت وش مستجدات الذكاء الاصطناعي اليوم والبزنس والتقنية واكتب لي بوستات")، ومهمتك تحضير المادة التي سيُكتب منها، لا كتابة البوستات.
+
+افهم الأمر أولاً: ما المواضيع المطلوبة؟ هل يحتاج بحثاً في الويب (مستجدات، أخبار اليوم، أرقام حديثة) أم يكفي ما في الأمر نفسه؟ كم بوستاً طلب (إن لم يحدد فأربعة، والحد الأقصى أربعة)؟ وما القيود التي ذكرها (لغة، نبرة، طول، جمهور، صيغة)؟
+إن احتاج بحثاً فابحث الآن واجمع أهم التطورات الحديثة فعلاً (بتاريخ اليوم أو الأيام القليلة الماضية) لكل موضوع طلبه، بحقائقها وأرقامها ومصادرها.
+
+اكتب بالعربية بهذا الشكل بالضبط وبلا مقدمات:
+العنوان: وصف الطلب في نصف سطر
+عدد البوستات: رقم من 1 إلى 4
+قيود المستخدم: ما ذكره أو "لا شيء"
+المادة:
+1. <تطور أو فكرة> — <الحقائق والأرقام المؤكدة> (<المصدر>، <التاريخ>)
+2. ...
+غير مؤكد: ما لم تجد له مصدراً، أو "لا شيء"
+
+لا تختلق أرقاماً أو تصريحات. اجعل عدد بنود المادة أكبر من عدد البوستات كي يكون للكاتب خيارات.`;
+
+/** ينفذ أمراً حراً: يفهمه، يبحث إن لزم، ويعيد مادة الكتابة وعدد البوستات المطلوب */
+export async function researchCommand(command: string): Promise<NewsBrief> {
+  const text = command.trim();
+  if (text.length < 5) throw new AIError('اكتب أمرك بجملة واضحة', 'config');
+  const today = new Date().toISOString().slice(0, 10);
+  const parts: UserBlock[] = [{ text: `التخصص الذي يكتب فيه المستخدم: ${getSpec() || 'ريادة الأعمال والتقنية'}\nتاريخ اليوم: ${today}\n\n=== أمر المستخدم ===\n${text}` }];
+  const system = [systemText(COMMAND_SYSTEM)];
+  let result: { text: string; sources: NewsSource[] };
+  let searched = false;
+  try {
+    result = await textCall({ kind: 'command_research', system, user: parts, effort: 'medium', maxTokens: 4000, search: true, mockHint: text });
+    searched = true;
+  } catch (err) {
+    console.warn('[news] search unavailable for the command, answering from the command only:', err instanceof Error ? err.message : err);
+    result = await textCall({ kind: 'command_research', system, user: parts, effort: 'medium', maxTokens: 4000, search: false, mockHint: text });
+  }
+  const { headline, brief } = parseBrief(result.text);
+  const countMatch = /عدد البوستات\s*[:：]\s*([1-4١-٤])/.exec(result.text);
+  const digits: Record<string, number> = { '١': 1, '٢': 2, '٣': 3, '٤': 4 };
+  const count = countMatch ? (digits[countMatch[1]] ?? Number(countMatch[1])) : 4;
+  if (!brief) throw new AIError('ما فهمت الأمر، اكتبه بصيغة أوضح', 'parse');
+  return {
+    headline: headline || text.slice(0, 120),
+    brief,
+    sources: result.sources.slice(0, 8),
+    searched,
+    note: searched ? null : 'بحث Gemini في الويب غير متاح الآن؛ نُفذ الأمر من نصه فقط.',
+    command: text,
+    count: Math.min(4, Math.max(1, count)),
+  };
+}
+
 // ---------------------------------------------------------------- آخر أخبار موضوع
 
 export interface NewsItem {

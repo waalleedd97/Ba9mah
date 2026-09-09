@@ -65,6 +65,10 @@ export interface NewsBrief {
   note: string | null;
   /** عند البحث عن آخر أخبار موضوع: الموضوع الذي طلبه المستخدم */
   query?: string | null;
+  /** عند تنفيذ أمر حر: نص الأمر كما كتبه المستخدم */
+  command?: string | null;
+  /** عدد البوستات المطلوبة في الأمر (1 إلى 4)، افتراضياً 4 */
+  count?: number | null;
 }
 
 export interface Round {
