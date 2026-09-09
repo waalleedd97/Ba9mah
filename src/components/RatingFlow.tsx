@@ -221,8 +221,8 @@ export function RatingFlow({ round, initialPosts, stats }: Props) {
         <div className="card mb-2 fade-up" style={{ padding: 14, borderColor: 'var(--info)' }}>
           <button type="button" className="row between" style={{ width: '100%', background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', textAlign: 'start' }} onClick={() => setNewsOpen((o) => !o)}>
             <span className="row" style={{ gap: 8 }}>
-              <Icon name="globe" size={16} style={{ color: 'var(--info)' }} />
-              <b style={{ fontSize: 14 }}>الخبر: {round.news.headline}</b>
+              <Icon name={round.news.query ? 'trending-up' : 'globe'} size={16} style={{ color: 'var(--info)' }} />
+              <b style={{ fontSize: 14 }}>{round.news.query ? `آخر أخبار ${round.news.query}` : `الخبر: ${round.news.headline}`}</b>
             </span>
             <span className="row" style={{ gap: 6 }}>
               <Pill tone={round.news.searched ? 'info' : 'warn'}>{round.news.searched ? 'بحث في الويب' : 'بلا بحث'}</Pill>

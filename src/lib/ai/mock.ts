@@ -37,6 +37,8 @@ export function mockFor(kind: string, hint?: string): unknown {
       };
     case 'analyze_dislike':
       return { reason: 'نبرة وعظية وطول زائد', category: 'tone', avoid_rules: ['تجنب النبرة الوعظية والجمل الطويلة'], confidence: 'medium' };
+    case 'news_digest':
+      return `العنوان: آخر أخبار ${(hint ?? 'الموضوع').slice(0, 40)}: تطور تجريبي مهم\nالتطورات:\n1. تطور تجريبي أول — حقائق وهمية في وضع الاختبار (مصدر تجريبي، اليوم)\n2. تطور تجريبي ثانٍ — أرقام وهمية (مصدر تجريبي، اليوم)\nغير مؤكد: لا شيء`;
     case 'news_research':
       return `العنوان: ${(hint ?? 'خبر تجريبي').split('\n')[0].slice(0, 80)}\n\nالملخص: هذا ملخص وهمي لخبر في وضع الاختبار. الحقائق: أُعلن الخبر اليوم، ويهم جمهور التقنية وريادة الأعمال.\n\nالمصادر: لا يوجد بحث في وضع الاختبار.`;
     case 'analyze_image_dislike':
