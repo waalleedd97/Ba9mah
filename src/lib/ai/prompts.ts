@@ -508,6 +508,29 @@ export function reflowWalls(content: string): { content: string; changed: boolea
   return { content: cleaned.join('\n\n'), changed: cleaned.length !== lines.length };
 }
 
+/**
+ * بوست إخباري تلغرافي: كثير من الأسطر القصيرة المتساوية (رؤوس أقلام) أو نص هزيل لا يحكي شيئاً.
+ * الخبر عند المستخدم يُحكى بسرد؛ هذا يُكتشف حتمياً ثم يُعاد للنموذج ليكتبه سرداً.
+ */
+export function isTelegraphicNews(content: string): boolean {
+  const lens = lineLengths(content);
+  const total = content.trim().length;
+  if (lens.length === 0) return true;
+  if (total < 180) return true;
+  if (lens.length >= 6 && median(lens) < 48) return true;
+  return false;
+}
+
+/** تعليمات إعادة كتابة بوست إخباري تلغرافي سرداً بنفس الحقائق والأسلوب */
+export function buildNewsPolishUser(content: string, brief: NewsBrief): string {
+  return (
+    `البوست التالي عن خبر، لكنه تلغرافي: أسطر قصيرة متقطعة كرؤوس أقلام أو نص ناقص لا يحكي القصة.\n\n` +
+    `=== البوست ===\n${content}\n\n=== الخبر (الحقائق المتاحة) ===\n${brief.headline}\n${brief.brief.slice(0, 2500)}\n\n` +
+    `أعد كتابته كما يحكي إنسان خبراً لصديق: 5 إلى 8 أسطر، افتتاحية قصيرة، ثم فقرة أو فقرتان متصلتان (جملتان أو ثلاث في السطر) تحكي من وماذا قال (اقتباس مترجم إن وُجد) وليش يهم، ثم رأي صريح في آخر سطر. ` +
+    `نفس الحقائق بلا إضافة، نفس اللهجة والمفردات، بلا قوائم ولا سطر لكل فكرة، وبلا سؤال تفاعلي في الخاتمة.`
+  );
+}
+
 /** هل هذا البند مجرد نسخة من افتتاحية للمستخدم (مثل "اسلممممم" في قائمة المفردات)؟ */
 export function isOwnOpener(text: string, openers: string[]): boolean {
   return matchesOpener(text, openers);

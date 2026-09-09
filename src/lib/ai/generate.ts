@@ -13,8 +13,21 @@ import {
 } from '@/lib/db/repo';
 import type { NewsBrief, Post, Round } from '@/lib/types';
 import { AIError, structuredCall } from './gemini';
-import { GenerationSchema } from './schemas';
-import { buildGenerationSystem, buildGenerationUser, corpusStats, explorationCount, ownOpeners, reflowWalls, selectExamples, shapeTargets, stripCopiedOpener } from './prompts';
+import { EditSchema, GenerationSchema } from './schemas';
+import {
+  buildEditSystem,
+  buildGenerationSystem,
+  buildGenerationUser,
+  buildNewsPolishUser,
+  corpusStats,
+  explorationCount,
+  isTelegraphicNews,
+  ownOpeners,
+  reflowWalls,
+  selectExamples,
+  shapeTargets,
+  stripCopiedOpener,
+} from './prompts';
 import { verifyIfNeeded } from './labor-law';
 
 export interface GeneratedRound {
@@ -79,6 +92,34 @@ export async function generateRound(topicInput?: string | null, news?: NewsBrief
       return { ...p, content: w.content };
     });
   if (drafts.length === 0) throw new AIError('لم يرجع النموذج أي بوست صالح', 'parse');
+
+  // جولة خبر واحد: البوست التلغرافي (رؤوس أقلام أو نص هزيل) يُعاد للنموذج ليحكيه سرداً بنفس الحقائق
+  if (news && !news.query) {
+    const editSystem = buildEditSystem(spec, profile, goldenRules);
+    await Promise.all(
+      drafts.map(async (p, i) => {
+        if (!isTelegraphicNews(p.content)) return;
+        try {
+          const { data: fixed } = await structuredCall({
+            kind: 'news_polish',
+            schema: EditSchema,
+            system: editSystem,
+            user: buildNewsPolishUser(p.content, news),
+            effort: 'medium',
+            maxTokens: 3000,
+            mockHint: p.content,
+          });
+          const polished = fixed.content.trim();
+          if (polished.length >= 120) {
+            console.log(`[generate] rewrote telegraphic news post #${i + 1} (${p.content.length} → ${polished.length} chars)`);
+            drafts[i] = { ...p, content: reflowWalls(polished).content };
+          }
+        } catch (err) {
+          console.warn('[generate] news polish failed, keeping the draft:', err instanceof Error ? err.message : err);
+        }
+      }),
+    );
+  }
 
   const verification = await verifyIfNeeded(
     spec,
